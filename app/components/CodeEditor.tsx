@@ -19,7 +19,7 @@ export default function VSCodeUI() {
   const [isCreating, setIsCreating] = useState(false);
   const [newFileName, setNewFileName] = useState("");
 
-  // 🆕 rename state
+  // rename state
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
 
@@ -32,8 +32,14 @@ export default function VSCodeUI() {
   const handleCreateFile = () => {
     if (!newFileName.trim()) return;
 
+    let name =  newFileName.trim();
+
+    if(!name.endsWith(".js")) {
+      name += ".js"
+    }
+
     const newFile: FileType = {
-      name: newFileName,
+      name,
       content: "",
     };
 
