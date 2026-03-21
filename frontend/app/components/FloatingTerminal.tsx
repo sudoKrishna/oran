@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
+import 'xterm/css/xterm.css';
 
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8080';
@@ -35,4 +36,17 @@ export default function FloatingTerminal() {
             },
         })
     })
+
+    const fa = new FitAddon();
+    term.loadAddon(fa);
+    term.open(containerRef.current);
+    fa.fit();
+    termRef.current = term;
+    fitAddon.current = fa;
+
+    setStatus('connecting');
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    
 }
