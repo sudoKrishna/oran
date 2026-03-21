@@ -1,5 +1,6 @@
 "use client";
 
+import { getSocket } from "@/lib/terminalSocket";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 
@@ -27,14 +28,14 @@ export default function VSCodeUI() {
 
   useEffect(() => {
     containerRef.current?.focus();
-  }, []); 
+  }, []);
 
   const handleCreateFile = () => {
     if (!newFileName.trim()) return;
 
-    let name =  newFileName.trim();
+    let name = newFileName.trim();
 
-    if(!name.endsWith(".js")) {
+    if (!name.endsWith(".js")) {
       name += ".js"
     }
 
@@ -96,23 +97,47 @@ export default function VSCodeUI() {
     setEditName("");
   };
 
+  const runFile = async () => {
+    if (activeFile === null) return;
+    const file = files[activeFile];
+    const socket = getSocket();
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      alert('Terminal not connected. Open the floating terminal first.')
+      return;
+    }
+
+    // Write file via HTTP (safe, no escaping issues)
+    const res = await fetch("http://localhost:8081/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: file.content }),
+    });
+
+    const { path } = await res.json();
+
+    // Then run it in the terminal
+    socket.send(`node "${path}"\r`);
+
+  }
+
   return (
     <div ref={containerRef}
-    tabIndex={0}
-     className="h-screen flex bg-[#1e1e1e] text-white"
-     onKeyDown={(e) => {
-      if(e.key === "Delete" && activeFile !== null) {
-        deleteFile(activeFile)
-     }
-     if(e.key === "F2" && activeFile !== null) {
-        const currentFile = files[activeFile];
-        startRename(activeFile , currentFile.name)
-     }
-    
-     
-    }}
-     >
-      
+      tabIndex={0}
+      className="h-screen flex bg-[#1e1e1e] text-white"
+      onKeyDown={(e) => {
+        if (e.key === "Delete" && activeFile !== null) {
+          deleteFile(activeFile)
+        }
+        if (e.key === "F2" && activeFile !== null) {
+          const currentFile = files[activeFile];
+          startRename(activeFile, currentFile.name)
+        }
+
+
+      }}
+    >
+
       {/* Sidebar */}
       <div className="w-16 bg-[#252526] flex flex-col items-center py-4 gap-4">
         <div>📁</div>
@@ -155,11 +180,10 @@ export default function VSCodeUI() {
         {files.map((file, index) => (
           <div
             key={index}
-            className={`flex items-center justify-between px-3 py-2 text-sm ${
-              activeFile === index
-                ? "bg-[#37373d]"
-                : "hover:bg-[#2a2d2e]"
-            }`}
+            className={`flex items-center justify-between px-3 py-2 text-sm ${activeFile === index
+              ? "bg-[#37373d]"
+              : "hover:bg-[#2a2d2e]"
+              }`}
           >
             {/* file name / rename input */}
             {editingIndex === index ? (
@@ -183,6 +207,26 @@ export default function VSCodeUI() {
             )}
           </div>
         ))}
+        <div className="flex border-b items-center justify-center border-gray-700 bg-[#2d2d2d]">
+          <div className="flex">
+            {files.map((file, index) => (
+              <div key={index}
+                onClick={() => setActiveFile(index)}
+                className={`px-4 py-2 text-sm cursor-pointer border-r border-gray-700 ${activeFile === index ? "bg-[#1e1e1e]" : "bg-[#2d2d2d]"
+                  }`}
+              >
+                {file.name}
+              </div>
+            ))}
+          </div>
+          {activeFile !== null && (
+            <button onClick={runFile}
+              className="mr-3 px-3 py-1 text-xs bg-green-600 hover:bg-green-500 rounded flex items-center gap-1">
+              ▶ Run
+            </button>
+          )}
+
+        </div>
       </div>
 
       {/* Editor */}
@@ -192,11 +236,10 @@ export default function VSCodeUI() {
             <div
               key={index}
               onClick={() => setActiveFile(index)}
-              className={`px-4 py-2 text-sm cursor-pointer border-r border-gray-700 ${
-                activeFile === index
-                  ? "bg-[#1e1e1e]"
-                  : "bg-[#2d2d2d]"
-              }`}
+              className={`px-4 py-2 text-sm cursor-pointer border-r border-gray-700 ${activeFile === index
+                ? "bg-[#1e1e1e]"
+                : "bg-[#2d2d2d]"
+                }`}
             >
               {file.name}
             </div>
@@ -214,7 +257,7 @@ export default function VSCodeUI() {
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-400">
-              Create a file to start coding 
+              Create a file to start coding
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 
+import { setSocket } from "@/lib/terminalSocket";
 import { useState, useEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
@@ -48,6 +49,7 @@ export default function FloatingTerminal() {
         wsRef.current = ws;
 
         ws.onopen = () => {
+            setSocket(ws);
             setStatus('connected');
             term.focus();
         };
