@@ -4,6 +4,10 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { v4 as uuidv4 } from "uuid";
+import fsExtra from "fs-extra";
+
+const projects = new Map();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,7 +19,62 @@ const httpServer = http.createServer((req, res) => {
 
   if (req.method === "OPTIONS") return res.end();
 
-  if (req.method === "POST" && req.url === "/run") {
+  if (req.method === "POST" && req.url === "/create-project") {
+    let body = "";
+
+    req.on("data", (chunk) => (body += chunk));
+
+    req.on("end", async () => {
+      try {
+        const { name, template } = JSON.parse(body);
+
+
+        if (!name || !template) {
+          res.writeHead(400);
+          return res.end(JSON.stringify({ error: "Missing fields" }));
+        }
+
+        const allowedTemplates = ["node"];
+        if (!allowedTemplates.includes(template)) {
+          res.writeHead(400);
+          return res.end(JSON.stringify({ error: "Invalid template" }));
+        }
+
+
+        const projectId = uuidv4();
+
+
+        const projectPath = path.join(__dirname, "projects", projectId);
+        const templatePath = path.join(__dirname, "templates", template);
+
+
+        if (!fs.existsSync(templatePath)) {
+          res.writeHead(400);
+          return res.end(JSON.stringify({ error: "Template not found" }));
+        }
+
+
+        await fsExtra.mkdir(projectPath, { recursive: true });
+        await fsExtra.copy(templatePath, projectPath);
+
+
+        projects.set(projectId, {
+  id: projectId,
+  name,
+  template,
+  path: projectPath,
+});
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ projectId }));
+
+
+      } catch (err) {
+        console.error(err);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error:  "error" }));
+      }
+    });
+  } else if (req.method === "POST" && req.url === "/run") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {

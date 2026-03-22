@@ -11,7 +11,14 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "dotenv": "^17.3.1",
+    "fs-extra": "^11.3.4",
     "node-pty": "^1.1.0",
+    "pg": "^8.20.0",
+    "uuid": "^13.0.0",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+
   }
 }
