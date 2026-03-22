@@ -111,13 +111,13 @@ export default function VSCodeUI() {
     const res = await fetch("http://localhost:8081/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: file.content }),
+      body: JSON.stringify({ code: file.content , name : file.name }),
     });
 
     const { path } = await res.json();
 
     // Then run it in the terminal
-    socket.send(`node "${path}"\r`);
+    socket.send(`cd "D:\\oran\\backend" ; node "${path}"\r`);
 
   }
 

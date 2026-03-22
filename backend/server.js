@@ -19,8 +19,8 @@ const httpServer = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      const { code } = JSON.parse(body);
-      const tmpFile = path.join(__dirname, "__run_tmp__.js");
+      const { code, name } = JSON.parse(body);
+      const tmpFile = path.join(__dirname, name || "__run_tmp__.js");
       fs.writeFileSync(tmpFile, code);
       res.end(JSON.stringify({ ok: true, path: tmpFile }));
     });
