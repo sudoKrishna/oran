@@ -171,8 +171,11 @@ const httpServer = http.createServer(async (req, res) => {
 
   else if (req.method === "POST" && req.url === "/run") {
     try {
-      const { code, name } = await parseBody(req);
-      const tmpFile = path.join(__dirname, name || "__run_tmp__.js");
+      const { code, name, projectId } = await parseBody(req);
+      const projectPath = path.join(__dirname , "projects" , projectId)
+
+      const tmpFile = path.join( projectPath, name || "__run_tmp__.js");
+      
       fs.writeFileSync(tmpFile, code);
       res.end(JSON.stringify({ ok: true, path: tmpFile }));
     } catch (err) {
