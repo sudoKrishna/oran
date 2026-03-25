@@ -1,7 +1,7 @@
 export const TEMPLATES = [
     {
-        id: "javascript",
-        label: "JavaScript",
+        id: "node",
+        label: "Node.js",
         description: "Node.js starter",
         files: ["index.js", "package.json"],
         defaultFile: "index.js"
