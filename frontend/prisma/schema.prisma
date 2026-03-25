@@ -12,28 +12,28 @@ datasource db {
   provider = "postgresql"
 }
 
-
 model Project {
-  id String @id @default(cuid())
-  name String
-  template String
-  ownerId String?
+  id        String   @id @default(cuid())
+  name      String
+  template  String
+  ownerId   String?
   createdAt DateTime @default(now())
   updateAt  DateTime @updatedAt
-  files    File[]
+  files     File[]
 
   @@map("projects")
 }
 
 model File {
-  id String @id @default(cuid())
-  projectId String 
-  path String
-  content String @db.Text
-  language String?
-  project Project @relation(fields: [projectId] , references: [id], onDelete: Cascade)
-  createAt DateTime @default(now())
-  updateAt DateTime @updatedAt
-  @@unique([projectId , path])
+  id        String   @id @default(cuid())
+  projectId String
+  path      String
+  content   String   @db.Text
+  language  String?
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createAt  DateTime @default(now())
+  updateAt  DateTime @updatedAt
+
+  @@unique([projectId, path])
   @@map("files")
 }
