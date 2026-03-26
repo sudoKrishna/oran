@@ -21,13 +21,12 @@ type OpenFile = {
   name: string;
   path: string;
   content: string;
-  isDirty: boolean; 
+  isDirty: boolean;
 };
 
 type Props = {
   projectId: string;
 };
-
 
 function getLanguage(filename: string): string {
   if (filename.endsWith(".ts") || filename.endsWith(".tsx")) return "typescript";
@@ -43,7 +42,7 @@ function getLanguage(filename: string): string {
 export default function VSCodeUI({ projectId }: Props) {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
-  const [activeFile, setActiveFile] = useState<string | null>(null); 
+  const [activeFile, setActiveFile] = useState<string | null>(null);
 
   const [isCreating, setIsCreating] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -57,54 +56,52 @@ export default function VSCodeUI({ projectId }: Props) {
   const providerRef = useRef<WebsocketProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
+  const isFirstRender = useRef(true);
 
-  //load files from server on mount 
+
   useEffect(() => {
     if (!projectId) return;
 
-    fetch(`http://localhost:8081/files/${projectId}`)
+  
+    fetch(`/api/files/${projectId}`)
       .then((r) => r.json())
       .then(({ files }) => {
-        setFileTree(files);
-       
-        const first = findFirstFile(files);
+        const safeFiles = Array.isArray(files) ? files : [];
+        setFileTree(safeFiles);
+        const first = findFirstFile(safeFiles);
         if (first) openFile(first);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [projectId]);
 
+
   useEffect(() => {
-   return () => {
-    cleanupYjs();
-   }
+    return () => cleanupYjs();
   }, []);
 
+  
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     cleanupYjs();
-  } , [activeFile , projectId])
+  }, [activeFile, projectId]);
 
   function cleanupYjs() {
-    if (bindingRef.current) {
-      bindingRef.current.destroy();
-      bindingRef.current = null;
-    }
-    if (providerRef.current) {
-      providerRef.current.destroy();
-      providerRef.current = null;
-    }
-    if (ydocRef.current) {
-      ydocRef.current.destroy();
-      ydocRef.current = null;
-    }
+    bindingRef.current?.destroy();
+    bindingRef.current = null;
+    providerRef.current?.destroy();
+    providerRef.current = null;
+    ydocRef.current?.destroy();
+    ydocRef.current = null;
   }
 
-
- function handleEditorDidMount(editor: any, monaco: any) {
+  function handleEditorDidMount(editor: any, _monaco: any) {
     if (!activeFile) return;
 
-    const roomName = `project-${projectId}-${activeFile ||  "default"}`;
-
+    const roomName = `project-${projectId}-${activeFile}`;
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
@@ -112,31 +109,27 @@ export default function VSCodeUI({ projectId }: Props) {
     providerRef.current = provider;
 
     const yText = ydoc.getText("content");
-
-    // Set initial content only if Yjs document is empty
     if (yText.length === 0) {
-      const currentContent = openFiles.find(f => f.path === activeFile)?.content || "";
+      const currentContent = openFiles.find((f) => f.path === activeFile)?.content || "";
       if (currentContent) yText.insert(0, currentContent);
     }
 
     const binding = new MonacoBinding(
       yText,
-      editor.getModel()!,          
+      editor.getModel()!,
       new Set([editor]),
       provider.awareness
     );
-
     bindingRef.current = binding;
 
-    
     provider.awareness.setLocalStateField("user", {
       name: `User-${Math.floor(Math.random() * 9000) + 1000}`,
       color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
     });
   }
 
-  // find first file in tree
-  function findFirstFile(nodes: FileNode[]): FileNode | null {
+  function findFirstFile(nodes: FileNode[] | null | undefined): FileNode | null {
+    if (!nodes?.length) return null;
     for (const node of nodes) {
       if (node.type === "file") return node;
       if (node.children) {
@@ -147,17 +140,13 @@ export default function VSCodeUI({ projectId }: Props) {
     return null;
   }
 
-  //  open a file into tabs 
   function openFile(node: FileNode) {
     if (node.type !== "file") return;
-
-    
     const already = openFiles.find((f) => f.path === node.path);
     if (already) {
       setActiveFile(node.path);
       return;
     }
-
     setOpenFiles((prev) => [
       ...prev,
       { name: node.name, path: node.path, content: node.content || "", isDirty: false },
@@ -165,28 +154,27 @@ export default function VSCodeUI({ projectId }: Props) {
     setActiveFile(node.path);
   }
 
-  // close a tab 
   function closeTab(filePath: string, e: React.MouseEvent) {
     e.stopPropagation();
-    const idx = openFiles.findIndex((f) => f.path === filePath);
-    const newOpen = openFiles.filter((f) => f.path !== filePath);
-    setOpenFiles(newOpen);
-
-    if (activeFile === filePath) {
-      
-      const next = newOpen[idx] || newOpen[idx - 1] || null;
-      setActiveFile(next?.path ?? null);
-    }
+    setOpenFiles((prev) => {
+      const idx = prev.findIndex((f) => f.path === filePath);
+      const next = prev.filter((f) => f.path !== filePath);
+      if (activeFile === filePath) {
+        setActiveFile(next[idx]?.path ?? next[idx - 1]?.path ?? null);
+      }
+      return next;
+    });
     if (filePath === activeFile) cleanupYjs();
   }
 
-  // ── save file to server 
+  // save file → Neon via Next.js API
   const saveFile = useCallback(
     async (filePath: string, content: string) => {
       setSaveStatus("saving");
       try {
+        // :filePath — Nextjs route → Prisma → Neon
         const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-        await fetch(`http://localhost:8081/files/${projectId}/${encodedPath}`, {
+        await fetch(`/api/files/${projectId}/${encodedPath}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content }),
@@ -203,23 +191,17 @@ export default function VSCodeUI({ projectId }: Props) {
     [projectId]
   );
 
-  // editor onChange: update state + debounce save 
   function updateCode(value: string | undefined) {
     if (!activeFile) return;
     const content = value || "";
-
     setOpenFiles((prev) =>
       prev.map((f) => (f.path === activeFile ? { ...f, content, isDirty: true } : f))
     );
     setSaveStatus("unsaved");
-
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveFile(activeFile, content);
-    }, 600);
+    saveTimerRef.current = setTimeout(() => saveFile(activeFile, content), 600);
   }
 
-  // Ctrl+S manual save 
   function handleKeyDown(e: React.KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
@@ -242,23 +224,22 @@ export default function VSCodeUI({ projectId }: Props) {
     }
   }
 
-  // create new file 
+ 
   const handleCreateFile = async () => {
     if (!newFileName.trim()) return;
     let name = newFileName.trim();
     if (!name.includes(".")) name += ".js";
 
-    const content = "";
-
     try {
+      // :projectId/:name — Nextjs route → Prisma upsert → Neon
       const encodedName = encodeURIComponent(name);
-      await fetch(`http://localhost:8081/files/${projectId}/${encodedName}`, {
+      await fetch(`/api/files/${projectId}/${encodedName}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: "" }),
       });
 
-      const newNode: FileNode = { name, path: name, type: "file", content };
+      const newNode: FileNode = { name, path: name, type: "file", content: "" };
       setFileTree((prev) => [...prev, newNode]);
       openFile(newNode);
     } catch (err) {
@@ -269,29 +250,51 @@ export default function VSCodeUI({ projectId }: Props) {
     setIsCreating(false);
   };
 
-  //  delete file 
-  function deleteFile(file: OpenFile) {
-   
-    closeTab(file.path, { stopPropagation: () => {} } as React.MouseEvent);
-    
-    setFileTree((prev) => prev.filter((f) => f.path !== file.path));
-    
+  function removeNode(nodes: FileNode[], path: string): FileNode[] {
+    return nodes
+      .filter((n) => n.path !== path)
+      .map((n) => (n.children ? { ...n, children: removeNode(n.children, path) } : n));
   }
 
-  //  rename 
+  //  delete file → neon via Nextjs API
+  function deleteFile(file: OpenFile) {
+    closeTab(file.path, { stopPropagation: () => {} } as React.MouseEvent);
+    setFileTree((prev) => removeNode(prev, file.path));
+
+    // :projectId/:filePath — Next route → Prisma delete → Neon
+    const encodedPath = file.path.split("/").map(encodeURIComponent).join("/");
+    fetch(`/api/files/${projectId}/${encodedPath}`, { method: "DELETE" }).catch(
+      console.error
+    );
+  }
+
   const saveRename = () => {
     if (!editingPath || !editName.trim()) return;
-    setFileTree((prev) =>
-      prev.map((f) => (f.path === editingPath ? { ...f, name: editName } : f))
-    );
+    const dir = editingPath.includes("/")
+      ? editingPath.substring(0, editingPath.lastIndexOf("/") + 1)
+      : "";
+    const newPath = dir + editName.trim();
+
+    function updateNode(nodes: FileNode[]): FileNode[] {
+      return nodes.map((n) => {
+        if (n.path === editingPath) return { ...n, name: editName.trim(), path: newPath };
+        if (n.children) return { ...n, children: updateNode(n.children) };
+        return n;
+      });
+    }
+
+    setFileTree((prev) => updateNode(prev));
     setOpenFiles((prev) =>
-      prev.map((f) => (f.path === editingPath ? { ...f, name: editName } : f))
+      prev.map((f) =>
+        f.path === editingPath ? { ...f, name: editName.trim(), path: newPath } : f
+      )
     );
+    if (activeFile === editingPath) setActiveFile(newPath);
     setEditingPath(null);
     setEditName("");
   };
 
-  //  run active file
+  //  Run filehits backend 
   const runFile = async () => {
     if (!activeFile) return;
     const file = openFiles.find((f) => f.path === activeFile);
@@ -303,25 +306,22 @@ export default function VSCodeUI({ projectId }: Props) {
       return;
     }
 
-    // save first, then run
     await saveFile(activeFile, file.content);
 
-    const projectPath = `http://localhost:8081/files/${projectId}`;
     const res = await fetch("http://localhost:8081/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: file.content, name: file.name ,projectId }),
+      body: JSON.stringify({ code: file.content, name: file.name, projectId }),
     });
 
     const { path: filePath } = await res.json();
     socket.send(`node "${filePath}"\r`);
   };
 
-  //  active file object 
   const activeFileObj = openFiles.find((f) => f.path === activeFile) ?? null;
 
-  // render file tree (recursive)
-  function renderTree(nodes: FileNode[], depth = 0) {
+  function renderTree(nodes: FileNode[] | null | undefined, depth = 0): React.ReactNode {
+    if (!nodes?.length) return null;
     return nodes.map((node) => (
       <div key={node.path}>
         <div
@@ -345,9 +345,7 @@ export default function VSCodeUI({ projectId }: Props) {
             />
           ) : (
             <span className="flex items-center gap-1.5 flex-1 truncate">
-              <span className="text-xs opacity-50">
-                {node.type === "folder" ? "▶" : ""}
-              </span>
+              <span className="text-xs opacity-50">{node.type === "folder" ? "▶" : ""}</span>
               {node.name}
             </span>
           )}
@@ -359,7 +357,6 @@ export default function VSCodeUI({ projectId }: Props) {
     ));
   }
 
-
   return (
     <div
       ref={containerRef}
@@ -367,13 +364,14 @@ export default function VSCodeUI({ projectId }: Props) {
       className="h-screen flex bg-[#1e1e1e] text-white outline-none"
       onKeyDown={handleKeyDown}
     >
-    
+      {/* Activity bar */}
       <div className="w-12 bg-[#252526] flex flex-col items-center py-4 gap-6 text-gray-400">
         <span className="text-lg cursor-pointer hover:text-white">📁</span>
         <span className="text-lg cursor-pointer hover:text-white">🔍</span>
         <span className="text-lg cursor-pointer hover:text-white">⚙️</span>
       </div>
 
+      {/* Sidebar */}
       <div className="w-56 bg-[#1e1e1e] border-r border-gray-700 flex flex-col">
         <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center">
           Explorer
@@ -394,7 +392,10 @@ export default function VSCodeUI({ projectId }: Props) {
               onChange={(e) => setNewFileName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreateFile();
-                if (e.key === "Escape") { setIsCreating(false); setNewFileName(""); }
+                if (e.key === "Escape") {
+                  setIsCreating(false);
+                  setNewFileName("");
+                }
               }}
               placeholder="filename.js"
               className="w-full px-2 py-1 text-sm bg-[#2a2d2e] outline-none rounded border border-blue-500"
@@ -411,10 +412,9 @@ export default function VSCodeUI({ projectId }: Props) {
         </div>
       </div>
 
-     
+      {/* Editor area */}
       <div className="flex-1 flex flex-col min-w-0">
-
-        
+        {/* Tab bar */}
         <div className="flex bg-[#252526] border-b border-gray-700 overflow-x-auto min-h-[36px]">
           <div className="flex flex-1">
             {openFiles.map((file) => (
@@ -443,7 +443,11 @@ export default function VSCodeUI({ projectId }: Props) {
 
           <div className="flex items-center gap-3 px-3">
             <span className="text-xs text-gray-500">
-              {saveStatus === "saving" ? "Saving..." : saveStatus === "unsaved" ? "Unsaved" : ""}
+              {saveStatus === "saving"
+                ? "Saving..."
+                : saveStatus === "unsaved"
+                ? "Unsaved"
+                : ""}
             </span>
             {activeFile && (
               <button
@@ -456,7 +460,7 @@ export default function VSCodeUI({ projectId }: Props) {
           </div>
         </div>
 
-       
+        {/* Monaco editor */}
         <div className="flex-1 overflow-hidden">
           {activeFileObj ? (
             <Editor
@@ -480,7 +484,7 @@ export default function VSCodeUI({ projectId }: Props) {
           )}
         </div>
 
-        
+        {/* Status bar */}
         <div className="flex items-center justify-between px-4 py-0.5 bg-[#007acc] text-white text-xs">
           <span>Project: {projectId.slice(0, 8)}...</span>
           <span>{activeFileObj ? getLanguage(activeFileObj.name) : ""}</span>
