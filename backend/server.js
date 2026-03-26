@@ -29,9 +29,7 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") return res.end();
 
-  // ── POST /run ─────────────────────────────────────────────────────────────
-  // Writes code to a temp file on disk so the PTY terminal can execute it.
-  // All file persistence now lives in Next.js API routes → Prisma → Neon.
+
   if (req.method === "POST" && req.url === "/run") {
     try {
       const { code, name, projectId } = await parseBody(req);
@@ -64,7 +62,6 @@ const httpServer = http.createServer(async (req, res) => {
 
 httpServer.listen(8081, () => console.log("HTTP running on http://localhost:8081"));
 
-// ─── WebSocket / PTY terminal ─────────────────────────────────────────────────
 
 const wss = new WebSocketServer({ port: 8080 });
 console.log("WS running on ws://localhost:8080");

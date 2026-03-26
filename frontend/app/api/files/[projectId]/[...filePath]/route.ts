@@ -17,13 +17,13 @@ function inferLanguage(filePath: string): string {
     return map[ext] ?? "plaintext";
 }
 
-// PUT /api/files/[projectId]/[...filePath] — upsert file content
+// PUT  upsert file content
 export async function PUT(
     req: NextRequest,
     { params }: { params: Promise<{ projectId: string; filePath: string[] }> }
 ) {
     try {
-        // ✅ Next.js 15: params is a Promise, must be awaited
+       
         const { projectId, filePath: filePathParts } = await params;
         const filePath = filePathParts.join("/");
 
@@ -55,13 +55,13 @@ export async function PUT(
     }
 }
 
-// DELETE /api/files/[projectId]/[...filePath] — delete a file
+//  delete a file
 export async function DELETE(
     _req: NextRequest,
     { params }: { params: Promise<{ projectId: string; filePath: string[] }> }
 ) {
     try {
-        // ✅ Next.js 15: params is a Promise, must be awaited
+        
         const { projectId, filePath: filePathParts } = await params;
         const filePath = filePathParts.join("/");
 

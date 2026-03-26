@@ -53,7 +53,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // ✅ Next.js 15: params is a Promise, must be awaited
+  
     const { projectId } = await params;
 
     const project = await prisma.project.findUnique({
