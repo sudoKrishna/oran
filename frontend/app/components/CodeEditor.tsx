@@ -59,10 +59,16 @@ export default function VSCodeUI({ projectId }: Props) {
   const isFirstRender = useRef(true);
 
 
+  const [aiResponse, setAiResponse] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiWarning, setAiWarning] = useState<string | null>(null);
+
+
   useEffect(() => {
     if (!projectId) return;
 
-  
+
     fetch(`/api/files/${projectId}`)
       .then((r) => r.json())
       .then(({ files }) => {
@@ -80,7 +86,7 @@ export default function VSCodeUI({ projectId }: Props) {
     return () => cleanupYjs();
   }, []);
 
-  
+
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -89,6 +95,49 @@ export default function VSCodeUI({ projectId }: Props) {
     cleanupYjs();
   }, [activeFile, projectId]);
 
+
+  // AI
+  const getCurrentCode = () => {
+    if (!activeFile) return "";
+    const file = openFiles.find(f => f.path === activeFile);
+    return file?.content || "";
+  };
+
+  const askAI = async (userPrompt: string) => {
+    if (!activeFile) {
+      alert("Open a file first before using AI");
+      return;
+    }
+
+    setIsAiLoading(true);
+    setAiWarning(null);
+    setAiResponse("AI is thinking...");
+
+    const currentCode = openFiles.find(f => f.path === activeFile)?.content || "";
+
+    const fullPrompt = `${userPrompt}\n\nCurrent file content (${activeFile}):\n\n\`\`\`\n${currentCode}\n\`\`\``;
+
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: fullPrompt }]
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.warning) setAiWarning(data.warning);
+      setAiResponse(data.content || "No response received.");
+      setShowAiPanel(true);
+    } catch (err) {
+      console.error("AI call failed:", err);
+      setAiResponse("Failed to get response from AI. Check console for details.");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
   function cleanupYjs() {
     bindingRef.current?.destroy();
     bindingRef.current = null;
@@ -224,7 +273,7 @@ export default function VSCodeUI({ projectId }: Props) {
     }
   }
 
- 
+
   const handleCreateFile = async () => {
     if (!newFileName.trim()) return;
     let name = newFileName.trim();
@@ -258,7 +307,7 @@ export default function VSCodeUI({ projectId }: Props) {
 
   //  delete file → neon via Nextjs API
   function deleteFile(file: OpenFile) {
-    closeTab(file.path, { stopPropagation: () => {} } as React.MouseEvent);
+    closeTab(file.path, { stopPropagation: () => { } } as React.MouseEvent);
     setFileTree((prev) => removeNode(prev, file.path));
 
     // :projectId/:filePath — Next route → Prisma delete → Neon
@@ -299,35 +348,56 @@ export default function VSCodeUI({ projectId }: Props) {
     if (!activeFile) return;
     const file = openFiles.find((f) => f.path === activeFile);
     if (!file) return;
-
+ 
     const socket = getSocket();
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       alert("Terminal not connected. Open the floating terminal first.");
       return;
     }
-
+ 
+    // Save first so the in-memory content is flushed to the DB
     await saveFile(activeFile, file.content);
-
-    const res = await fetch("http://localhost:8081/run", {
+ 
+    const HTTP_URL = process.env.NEXT_PUBLIC_HTTP_URL ?? "http://localhost:8081";
+ 
+    const res = await fetch(`${HTTP_URL}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // Server writes the file into the container at /workspace/<name>
       body: JSON.stringify({ code: file.content, name: file.name, projectId }),
     });
-
-    const { path: filePath } = await res.json();
-    socket.send(`node "${filePath}"\r`);
+ 
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: "Unknown error" }));
+      alert(`Run failed: ${error}`);
+      return;
+    }
+ 
+    const { path: containerPath } = await res.json();
+ 
+    // Decide runner based on file extension
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    const runCmd: Record<string, string> = {
+      js: `node "${containerPath}"`,
+      ts: `npx ts-node "${containerPath}"`,
+      py: `python3 "${containerPath}"`,
+      rb: `ruby "${containerPath}"`,
+      go: `go run "${containerPath}"`,
+      sh: `sh "${containerPath}"`,
+    };
+ 
+    const cmd = runCmd[ext ?? ""] ?? `node "${containerPath}"`;
+    socket.send(`${cmd}\r`);
   };
-
   const activeFileObj = openFiles.find((f) => f.path === activeFile) ?? null;
 
   function renderTree(nodes: FileNode[] | null | undefined, depth = 0): React.ReactNode {
     if (!nodes?.length) return null;
     return nodes.map((node) => (
-      <div key={node.path}>
+      <div key={`tree-${node.path || node.name}-${depth}`}>
         <div
-          className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer group ${
-            activeFile === node.path ? "bg-[#37373d]" : "hover:bg-[#2a2d2e]"
-          }`}
+          className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer group ${activeFile === node.path ? "bg-[#37373d]" : "hover:bg-[#2a2d2e]"
+            }`}
           style={{ paddingLeft: `${12 + depth * 12}px` }}
           onClick={() => node.type === "file" && openFile(node)}
         >
@@ -421,11 +491,10 @@ export default function VSCodeUI({ projectId }: Props) {
               <div
                 key={file.path}
                 onClick={() => setActiveFile(file.path)}
-                className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-r border-gray-700 whitespace-nowrap group ${
-                  activeFile === file.path
-                    ? "bg-[#1e1e1e] text-white border-t-2 border-t-blue-500"
-                    : "bg-[#252526] text-gray-400 hover:text-white"
-                }`}
+                className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-r border-gray-700 whitespace-nowrap group ${activeFile === file.path
+                  ? "bg-[#1e1e1e] text-white border-t-2 border-t-blue-500"
+                  : "bg-[#252526] text-gray-400 hover:text-white"
+                  }`}
               >
                 <span>{file.name}</span>
                 {file.isDirty && (
@@ -446,8 +515,8 @@ export default function VSCodeUI({ projectId }: Props) {
               {saveStatus === "saving"
                 ? "Saving..."
                 : saveStatus === "unsaved"
-                ? "Unsaved"
-                : ""}
+                  ? "Unsaved"
+                  : ""}
             </span>
             {activeFile && (
               <button
@@ -457,6 +526,34 @@ export default function VSCodeUI({ projectId }: Props) {
                 ▶ Run
               </button>
             )}
+            {/* AI system */}
+            <div className="flex items-center gap-2 px-3">
+              {activeFile && (
+                <>
+                  <button
+                    onClick={() => askAI("Explain this code")}
+                    className="px-3 py-1 text-xs bg-purple-700 hover:bg-purple-600 rounded"
+                    disabled={isAiLoading}
+                  >
+                    Explain
+                  </button>
+                  <button
+                    onClick={() => askAI("Find bugs and suggest fixes")}
+                    className="px-3 py-1 text-xs bg-orange-700 hover:bg-orange-600 rounded"
+                    disabled={isAiLoading}
+                  >
+                    Debug
+                  </button>
+                  <button
+                    onClick={() => askAI("Suggest improvements or refactoring")}
+                    className="px-3 py-1 text-xs bg-blue-700 hover:bg-blue-600 rounded"
+                    disabled={isAiLoading}
+                  >
+                    Improve
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
