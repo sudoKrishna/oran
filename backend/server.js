@@ -20,34 +20,33 @@ function parseBody(req) {
   });
 }
 
-// ─── Container Management ────────────────────────────────────────────────────
 
 const PROJECT_IMAGE = process.env.SANDBOX_IMAGE || "node:20-alpine";
 const CONTAINER_PREFIX = "sandbox_";
 const CONTAINER_TTL_MS = 30 * 60 * 1000; // 30 minutes idle timeout
 
-// Track active containers: projectId → { name, lastActive, activeTerminals }
+
 const containers = new Map();
 
 async function ensureContainer(projectId) {
   const containerName = `${CONTAINER_PREFIX}${projectId}`;
 
-  // Check if already tracked and running
+  
   if (containers.has(projectId)) {
     const entry = containers.get(projectId);
     entry.lastActive = Date.now();
 
-    // Verify it's actually still running
+   
     try {
       await execAsync(`docker inspect -f "{{.State.Running}}" ${containerName}`);
       return containerName;
     } catch {
-      // Container died — fall through to recreate
+      
       containers.delete(projectId);
     }
   }
 
-  // Check if container exists but isn't tracked (e.g. server restart)
+  
   try {
     const { stdout } = await execAsync(
       `docker inspect -f "{{.State.Running}}" ${containerName}`
@@ -60,13 +59,13 @@ async function ensureContainer(projectId) {
       });
       return containerName;
     }
-    // Exists but stopped — remove it
+  
     await execAsync(`docker rm -f ${containerName}`).catch(() => { });
   } catch {
-    // Doesn't exist yet — that's fine
+   
   }
 
-  // Spin up a fresh container
+
   console.log(`[docker] Starting container for project: ${projectId}`);
   await execAsync(
     `docker run -d --name ${containerName} \
@@ -93,7 +92,7 @@ async function destroyContainer(projectId) {
   containers.delete(projectId);
 }
 
-// Reap idle containers every 5 minutes
+
 setInterval(async () => {
   const now = Date.now();
   for (const [projectId, entry] of containers.entries()) {
@@ -103,7 +102,7 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000);
 
-// ─── HTTP Server ─────────────────────────────────────────────────────────────
+ // HTTP Server
 
 const httpServer = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -112,7 +111,7 @@ const httpServer = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") return res.end();
 
-  // Write a file directly into the container via stdin — no host tmp files
+  
   if (req.method === "POST" && req.url === "/run") {
     try {
       const { code, name, projectId } = await parseBody(req);
@@ -126,11 +125,10 @@ const httpServer = http.createServer(async (req, res) => {
       const fileName = name || "__run_tmp__.js";
       const containerPath = `/workspace/${fileName}`;
 
-      // Ensure /workspace exists inside the container
+     
       await execAsync(`docker exec ${containerName} mkdir -p /workspace`);
 
-      // Pipe code directly into the container via `docker exec ... tee`
-      // No host filesystem involved at all
+   
       await new Promise((resolve, reject) => {
         const proc = spawn("docker", [
           "exec", "-i", containerName,
@@ -152,7 +150,7 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // Destroy a project's container
+ 
   if (req.method === "DELETE" && req.url?.startsWith("/container/")) {
     const projectId = req.url.split("/container/")[1];
     if (!projectId) {
@@ -171,13 +169,13 @@ const httpServer = http.createServer(async (req, res) => {
 
 httpServer.listen(8081, () => console.log("HTTP running on http://localhost:8081"));
 
-// ─── WebSocket Terminal ───────────────────────────────────────────────────────
+// WebSocket Terminal 
 
 const wss = new WebSocketServer({ port: 8080 });
 console.log("WS running on ws://localhost:8080");
 
 wss.on("connection", (ws, req) => {
-  // Expect: ws://localhost:8080?projectId=abc123
+ 
   const url = new URL(req.url, "http://localhost");
   const projectId = url.searchParams.get("projectId");
 
@@ -196,7 +194,7 @@ wss.on("connection", (ws, req) => {
 
       console.log(`[ws] Terminal attached → ${containerName}`);
 
-      // ← THE KEY CHANGE: spawn into the container instead of bare bash
+      
       term = pty.spawn("docker", ["exec", "-it", containerName, "/bin/sh"], {
         name: "xterm-color",
         cols: 80,
@@ -210,7 +208,7 @@ wss.on("connection", (ws, req) => {
       });
 
       ws.on("message", (msg) => {
-        // Handle resize messages: { type: "resize", cols, rows }
+        
         try {
           const parsed = JSON.parse(msg.toString());
           if (parsed.type === "resize" && parsed.cols && parsed.rows) {
@@ -218,7 +216,7 @@ wss.on("connection", (ws, req) => {
             return;
           }
         } catch {
-          // Not JSON — treat as terminal input
+          
         }
         term.write(msg.toString());
       });

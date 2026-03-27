@@ -355,7 +355,7 @@ export default function VSCodeUI({ projectId }: Props) {
       return;
     }
  
-    // Save first so the in-memory content is flushed to the DB
+   
     await saveFile(activeFile, file.content);
  
     const HTTP_URL = process.env.NEXT_PUBLIC_HTTP_URL ?? "http://localhost:8081";
@@ -363,7 +363,7 @@ export default function VSCodeUI({ projectId }: Props) {
     const res = await fetch(`${HTTP_URL}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Server writes the file into the container at /workspace/<name>
+      
       body: JSON.stringify({ code: file.content, name: file.name, projectId }),
     });
  
@@ -375,7 +375,7 @@ export default function VSCodeUI({ projectId }: Props) {
  
     const { path: containerPath } = await res.json();
  
-    // Decide runner based on file extension
+   
     const ext = file.name.split(".").pop()?.toLowerCase();
     const runCmd: Record<string, string> = {
       js: `node "${containerPath}"`,

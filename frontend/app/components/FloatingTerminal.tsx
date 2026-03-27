@@ -49,7 +49,7 @@ export default function FloatingTerminal({ projectId }: Props) {
 
     setStatus('connecting');
 
-    // ← Pass projectId so the server attaches to the right container
+   
     const ws = new WebSocket(`${WS_URL}?projectId=${projectId}`);
     wsRef.current = ws;
 
@@ -69,7 +69,6 @@ export default function FloatingTerminal({ projectId }: Props) {
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
     });
 
-    // Send resize events to the server so the pty tracks the real terminal size
     const observer = new ResizeObserver(() => {
       fa.fit();
       if (ws.readyState === WebSocket.OPEN) {
@@ -132,7 +131,7 @@ export default function FloatingTerminal({ projectId }: Props) {
           <span className="w-2 h-2 rounded-full inline-block" style={{ background: statusColor }} />
         </div>
 
-        {/* xterm container */}
+     
         <div ref={containerRef} className="flex-1 p-[6px] overflow-hidden" />
       </div>
     </>
