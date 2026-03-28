@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import TemplatePicker from "@/app/components/TemplatePicker";
+import LandingPage from "@/app/components/LandingPage";
 
 const FloatingTerminal = dynamic(
   () => import("@/app/components/FloatingTerminal"),
@@ -17,14 +18,18 @@ const CodeEditor = dynamic(
 export default function Home() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [filesReady, setFilesReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const idFromUrl = urlParams.get("projectId");
+
     if (idFromUrl) {
       setProjectId(idFromUrl);
       setFilesReady(true);
     }
+
+    setIsLoading(false);
   }, []);
 
   // Poll /api/files/:projectId until at least one file exists
@@ -38,7 +43,7 @@ export default function Home() {
         const { files } = await res.json();
         if (Array.isArray(files) && files.length > 0) return;
       } catch {
-        
+
       }
       await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
     }
@@ -66,31 +71,40 @@ export default function Home() {
       setFilesReady(true);
     } catch (err) {
       console.error("Create project failed:", err);
-      setFilesReady(true); 
+      setFilesReady(true);
     }
   };
 
-  if (!projectId || !filesReady) {
-    return (
-      <>
-        {!projectId && <TemplatePicker onSelect={handleTemplateSelect} />}
 
-        {projectId && !filesReady && (
-          <div className="h-screen flex flex-col items-center justify-center bg-[#1e1e1e] text-white gap-4">
-            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-gray-400">Setting up your project...</p>
-          </div>
-        )}
-      </>
+  // Initial page loading
+  if (isLoading) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#1e1e1e] text-white gap-4">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-400">Loading...</p>
+      </div>
+    );
+  }
+
+  // Show landing page first
+  if (!projectId) {
+    return <LandingPage />;
+  }
+
+  // Show loading when project exists but files not ready
+  if (!filesReady) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#1e1e1e] text-white gap-4">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-400">Setting up your project...</p>
+      </div>
     );
   }
 
   return (
     <main className="h-screen flex flex-col">
       <CodeEditor projectId={projectId} />
-      
-        {projectId && <FloatingTerminal projectId={projectId} />}
-     
+      {projectId && <FloatingTerminal projectId={projectId} />}
     </main>
   );
 }
