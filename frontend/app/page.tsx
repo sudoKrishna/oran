@@ -88,9 +88,9 @@ export default function Home() {
   return (
     <main className="h-screen flex flex-col">
       <CodeEditor projectId={projectId} />
-      <div className="h-48 border-t border-gray-700 flex-shrink-0">
+      
         {projectId && <FloatingTerminal projectId={projectId} />}
-      </div>
+     
     </main>
   );
 }

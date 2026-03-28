@@ -59,13 +59,13 @@ export default function VSCodeUI({ projectId }: Props) {
   const isFirstRender = useRef(true);
 
 
-const [showAiPanel, setShowAiPanel] = useState(false);
-const [aiTab, setAiTab] = useState<"issues" | "suggest" | "chat">("issues");
-const [aiMessages, setAiMessages] = useState<{ role: string; content: string }[]>([]);
-const [aiPrompt, setAiPrompt] = useState("");
-const [aiResponse, setAiResponse] = useState("");
-const [aiWarning, setAiWarning] = useState<string | null>(null);
-const [isAiLoading, setIsAiLoading] = useState(false);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiTab, setAiTab] = useState<"issues" | "suggest" | "chat">("issues");
+  const [aiMessages, setAiMessages] = useState<{ role: string; content: string }[]>([]);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [aiWarning, setAiWarning] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
 
   useEffect(() => {
@@ -107,45 +107,45 @@ const [isAiLoading, setIsAiLoading] = useState(false);
   };
 
   const askAI = async (userPrompt: string) => {
-  if (!activeFile) {
-    alert("Open a file first before using AI");
-    return;
-  }
+    if (!activeFile) {
+      alert("Open a file first before using AI");
+      return;
+    }
 
-  setIsAiLoading(true);
-  setAiWarning(null);
-  setShowAiPanel(true);
+    setIsAiLoading(true);
+    setAiWarning(null);
+    setShowAiPanel(true);
 
-  const currentCode = openFiles.find((f) => f.path === activeFile)?.content || "";
-  const fullPrompt = `${userPrompt}\n\nCurrent file (${activeFile}):\n\`\`\`\n${currentCode}\n\`\`\``;
+    const currentCode = openFiles.find((f) => f.path === activeFile)?.content || "";
+    const fullPrompt = `${userPrompt}\n\nCurrent file (${activeFile}):\n\`\`\`\n${currentCode}\n\`\`\``;
 
-  const updatedMessages = [
-    ...aiMessages,
-    { role: "user", content: fullPrompt },
-  ];
+    const updatedMessages = [
+      ...aiMessages,
+      { role: "user", content: fullPrompt },
+    ];
 
-  try {
-    const response = await fetch("/api/ai/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: updatedMessages }),
-    });
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: updatedMessages }),
+      });
 
-    const data = await response.json();
-    const assistantMessage = { role: "assistant", content: data.content || "No response." };
+      const data = await response.json();
+      const assistantMessage = { role: "assistant", content: data.content || "No response." };
 
-    setAiMessages([...updatedMessages, assistantMessage]);
-    setAiResponse(data.content || "No response.");
-    if (data.warning) setAiWarning(data.warning);
-    setAiTab("chat");
-  } catch (err) {
-    console.error("AI call failed:", err);
-    setAiResponse("Failed to get AI response.");
-  } finally {
-    setIsAiLoading(false);
-    setAiPrompt("");
-  }
-};
+      setAiMessages([...updatedMessages, assistantMessage]);
+      setAiResponse(data.content || "No response.");
+      if (data.warning) setAiWarning(data.warning);
+      setAiTab("chat");
+    } catch (err) {
+      console.error("AI call failed:", err);
+      setAiResponse("Failed to get AI response.");
+    } finally {
+      setIsAiLoading(false);
+      setAiPrompt("");
+    }
+  };
   function cleanupYjs() {
     bindingRef.current?.destroy();
     bindingRef.current = null;
@@ -356,34 +356,34 @@ const [isAiLoading, setIsAiLoading] = useState(false);
     if (!activeFile) return;
     const file = openFiles.find((f) => f.path === activeFile);
     if (!file) return;
- 
+
     const socket = getSocket();
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       alert("Terminal not connected. Open the floating terminal first.");
       return;
     }
- 
-   
+
+
     await saveFile(activeFile, file.content);
- 
+
     const HTTP_URL = process.env.NEXT_PUBLIC_HTTP_URL ?? "http://localhost:8081";
- 
+
     const res = await fetch(`${HTTP_URL}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      
+
       body: JSON.stringify({ code: file.content, name: file.name, projectId }),
     });
- 
+
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({ error: "Unknown error" }));
       alert(`Run failed: ${error}`);
       return;
     }
- 
+
     const { path: containerPath } = await res.json();
- 
-   
+
+
     const ext = file.name.split(".").pop()?.toLowerCase();
     const runCmd: Record<string, string> = {
       js: `node "${containerPath}"`,
@@ -393,7 +393,7 @@ const [isAiLoading, setIsAiLoading] = useState(false);
       go: `go run "${containerPath}"`,
       sh: `sh "${containerPath}"`,
     };
- 
+
     const cmd = runCmd[ext ?? ""] ?? `node "${containerPath}"`;
     socket.send(`${cmd}\r`);
   };
@@ -443,27 +443,46 @@ const [isAiLoading, setIsAiLoading] = useState(false);
       onKeyDown={handleKeyDown}
     >
       {/* Activity bar */}
-      <div className="w-12 bg-[#252526] flex flex-col items-center py-4 gap-6 text-gray-400">
-        <span className="text-lg cursor-pointer hover:text-white">📁</span>
-        <span className="text-lg cursor-pointer hover:text-white">🔍</span>
-        <span className="text-lg cursor-pointer hover:text-white">⚙️</span>
+      <div className="w-14 m-2 flex flex-col items-center py-4 gap-6 
+  rounded-xl 
+  bg-white/5 
+  backdrop-blur-2xl 
+  border border-white/10 
+  shadow-[inset_0_0_10px_rgba(255,255,255,0.05)]"
+      >
+        {["📁", "🔍", "⚙️"].map((icon, i) => (
+          <button
+            key={i}
+            className="text-lg text-white/40 hover:text-white 
+      transition-all duration-200 
+      hover:scale-110 
+      hover:bg-white/10 
+      p-2 rounded-lg"
+          >
+            {icon}
+          </button>
+        ))}
       </div>
 
+
       {/* Sidebar */}
-      <div className="w-56 bg-[#1e1e1e] border-r border-gray-700 flex flex-col">
-        <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center">
+      <div className="w-64 flex flex-col bg-white/5 backdrop-blur-2xl border border-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] rounded-xl">
+
+        {/* Header */}
+        <div className="px-4 py-3 text-xs font-medium text-white/50 uppercase tracking-wider flex justify-between items-center">
           Explorer
           <button
             onClick={() => setIsCreating(true)}
-            className="text-gray-400 hover:text-white text-lg leading-none"
+            className="text-white/40 hover:text-white text-lg transition-all duration-200"
             title="New file"
           >
             +
           </button>
         </div>
 
+        {/* New file input */}
         {isCreating && (
-          <div className="px-3 py-1">
+          <div className="px-4 pb-2">
             <input
               autoFocus
               value={newFileName}
@@ -476,38 +495,168 @@ const [isAiLoading, setIsAiLoading] = useState(false);
                 }
               }}
               placeholder="filename.js"
-              className="w-full px-2 py-1 text-sm bg-[#2a2d2e] outline-none rounded border border-blue-500"
+              className="w-full px-3 py-1.5 text-sm bg-white/5 border border-white/10 focus:border-white/20 rounded-md outline-none text-white/70 placeholder:text-white/40 transition"
             />
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto">
+        {/* File tree */}
+        <div className="flex-1 overflow-y-auto px-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
           {loading ? (
-            <div className="px-3 py-4 text-xs text-gray-500">Loading files...</div>
+            <div className="px-3 py-4 text-xs text-white/50">Loading files...</div>
           ) : (
             renderTree(fileTree)
           )}
         </div>
       </div>
+      {/* AI Panel */}
+      <div>
+        {showAiPanel && (
+          <div className="w-72 bg-white/5 backdrop-blur-xl border-l border-white/10 flex flex-col text-sm rounded-l-xl shadow-lg">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+              <span className="text-purple-400 text-xs font-medium flex items-center gap-1.5">✦ AI Assistant</span>
+              <button onClick={() => setShowAiPanel(false)} className="text-white/50 hover:text-white text-xs">✕</button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-white/10">
+              {(["issues", "suggest", "chat"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setAiTab(tab)}
+                  className={`flex-1 py-1.5 text-xs capitalize transition-colors ${aiTab === tab
+                    ? "text-purple-400 border-b border-purple-500"
+                    : "text-white/50 hover:text-white"
+                    }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+              {aiTab === "chat" && (
+                <>
+                  {aiMessages.length === 0 && !isAiLoading && (
+                    <p className="text-xs text-white/50 text-center mt-8">
+                      Use a quick action or ask anything about this file.
+                    </p>
+                  )}
+                  {isAiLoading && (
+                    <div className="text-xs text-purple-400 animate-pulse">AI is thinking...</div>
+                  )}
+                  {aiWarning && (
+                    <div className="text-xs text-yellow-400 bg-yellow-950 rounded px-2 py-1.5">{aiWarning}</div>
+                  )}
+                  {aiMessages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`text-xs rounded px-2 py-1.5 ${msg.role === "user"
+                        ? "bg-white/10 text-white/70 self-end max-w-[90%]"
+                        : "bg-white/5 text-white/80"
+                        }`}
+                    >
+                      <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{msg.content}</pre>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {aiTab === "issues" && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-white/50">
+                    Click <span className="text-purple-400">Debug</span> to review issues in the current file.
+                  </p>
+                  {aiResponse && (
+                    <div className="bg-white/10 rounded p-2 text-xs text-white/70">
+                      <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{aiResponse}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {aiTab === "suggest" && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-white/50">
+                    Click <span className="text-purple-400">Improve</span> to get refactoring suggestions.
+                  </p>
+                  {aiResponse && (
+                    <div className="bg-white/5 border border-purple-700 rounded p-2 text-xs text-purple-200">
+                      <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{aiResponse}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Quick actions + prompt */}
+            <div className="border-t border-white/10 p-2 flex flex-col gap-2">
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { label: "Explain", prompt: "Explain this code clearly" },
+                  { label: "Debug", prompt: "Find bugs and suggest fixes" },
+                  { label: "Improve", prompt: "Suggest improvements or refactoring" },
+                  { label: "Add types", prompt: "Add proper TypeScript types where missing" },
+                ].map(({ label, prompt }) => (
+                  <button
+                    key={label}
+                    onClick={() => { setAiTab("chat"); askAI(prompt); }}
+                    disabled={isAiLoading}
+                    className="text-[10px] px-2 py-1 bg-white/10 text-white/50 hover:text-purple-400 hover:border-purple-700 border border-white/10 rounded disabled:opacity-40"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1">
+                <textarea
+                  rows={2}
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (aiPrompt.trim()) { setAiTab("chat"); askAI(aiPrompt.trim()); }
+                    }
+                  }}
+                  placeholder="Ask about this file..."
+                  className="flex-1 bg-white/5 border border-white/10 focus:border-purple-700 rounded px-2 py-1 text-xs text-white/70 font-mono resize-none outline-none"
+                />
+                <button
+                  onClick={() => { if (aiPrompt.trim()) { setAiTab("chat"); askAI(aiPrompt.trim()); } }}
+                  disabled={isAiLoading || !aiPrompt.trim()}
+                  className="px-2 bg-purple-900 hover:bg-purple-800 text-purple-300 rounded disabled:opacity-40"
+                >
+                  ↑
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
 
       {/* Editor area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Tab bar */}
-        <div className="flex bg-[#252526] border-b border-gray-700 overflow-x-auto min-h-[36px]">
+        <div className="flex bg-black backdrop-blur-xl border-b border-white/10 overflow-x-auto min-h-[36px]">
+
+          {/* Open files tabs */}
           <div className="flex flex-1">
             {openFiles.map((file) => (
               <div
                 key={file.path}
                 onClick={() => setActiveFile(file.path)}
-                className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-r border-gray-700 whitespace-nowrap group ${activeFile === file.path
-                  ? "bg-[#1e1e1e] text-white border-t-2 border-t-blue-500"
-                  : "bg-[#252526] text-gray-400 hover:text-white"
+                className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-r border-white/10 whitespace-nowrap group transition-colors ${activeFile === file.path
+                  ? "bg-[#1E1E1E] text-white border-t-2 border-blue-500"
+                  : "bg-transparent text-white/50 hover:text-white/80"
                   }`}
               >
                 <span>{file.name}</span>
-                {file.isDirty && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-white opacity-70" />
-                )}
+                {file.isDirty && <span className="w-1.5 h-1.5 rounded-full bg-white opacity-70" />}
                 <span
                   onClick={(e) => closeTab(file.path, e)}
                   className="opacity-0 group-hover:opacity-60 hover:!opacity-100 text-xs leading-none"
@@ -518,157 +667,38 @@ const [isAiLoading, setIsAiLoading] = useState(false);
             ))}
           </div>
 
+          {/* Right-side actions */}
           <div className="flex items-center gap-2 px-3 ml-auto">
-  <span className="text-xs text-gray-500">
-    {saveStatus === "saving" ? "Saving..." : saveStatus === "unsaved" ? "Unsaved" : ""}
-  </span>
-  {activeFile && (
-    <button
-      onClick={runFile}
-      className="px-3 py-1 text-xs bg-green-800 hover:bg-green-700 rounded flex items-center gap-1"
-    >
-      ▶ Run
-    </button>
-  )}
-  {activeFile && (
-    <button
-      onClick={() => setShowAiPanel((p) => !p)}
-      className={`px-3 py-1 text-xs rounded flex items-center gap-1.5 transition-colors ${
-        showAiPanel ? "bg-purple-800 text-purple-200" : "bg-[#2a2d2e] text-purple-400 hover:bg-purple-900"
-      }`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full bg-purple-400 ${isAiLoading ? "animate-pulse" : ""}`} />
-      AI
-    </button>
-  )}
-</div>
-{/* AI Panel */}
-{showAiPanel && (
-  <div className="w-72 bg-[#12121e] border-l border-gray-700 flex flex-col text-sm">
-    
-    {/* Header */}
-    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
-      <span className="text-purple-400 text-xs font-medium flex items-center gap-1.5">
-        ✦ AI Assistant
-      </span>
-      <button onClick={() => setShowAiPanel(false)} className="text-gray-600 hover:text-gray-300 text-xs">✕</button>
-    </div>
+            <span className="text-xs text-white/50">
+              {saveStatus === "saving"
+                ? "Saving..."
+                : saveStatus === "unsaved"
+                  ? "Unsaved"
+                  : ""}
+            </span>
+            {activeFile && (
+              <button
+                onClick={runFile}
+                className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded flex items-center gap-1 text-white transition"
+              >
+                ▶ Run
+              </button>
+            )}
+            {activeFile && (
+              <button
+                onClick={() => setShowAiPanel((p) => !p)}
+                className={`px-3 py-1 text-xs rounded flex items-center gap-1.5 transition-colors ${showAiPanel
+                  ? "bg-purple-800 text-purple-200"
+                  : "bg-white/5 text-purple-400 hover:bg-purple-900"
+                  }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full bg-purple-400 ${isAiLoading ? "animate-pulse" : ""}`} />
+                AI
+              </button>
+            )}
+          </div>
 
-    {/* Tabs */}
-    <div className="flex border-b border-gray-700">
-      {(["issues", "suggest", "chat"] as const).map((tab) => (
-        <button
-          key={tab}
-          onClick={() => setAiTab(tab)}
-          className={`flex-1 py-1.5 text-xs capitalize transition-colors ${
-            aiTab === tab
-              ? "text-purple-400 border-b border-purple-500"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          {tab}
-        </button>
-      ))}
-    </div>
 
-    {/* Body */}
-    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-      {aiTab === "chat" && (
-        <>
-          {aiMessages.length === 0 && !isAiLoading && (
-            <p className="text-xs text-gray-600 text-center mt-8">
-              Use a quick action or ask anything about this file.
-            </p>
-          )}
-          {isAiLoading && (
-            <div className="text-xs text-purple-400 animate-pulse">AI is thinking...</div>
-          )}
-          {aiWarning && (
-            <div className="text-xs text-yellow-500 bg-yellow-950 rounded px-2 py-1.5">{aiWarning}</div>
-          )}
-          {aiMessages.map((msg, i) => (
-            <div key={i} className={`text-xs rounded px-2 py-1.5 ${
-              msg.role === "user"
-                ? "bg-[#1e1e2e] text-gray-400 self-end max-w-[90%]"
-                : "bg-[#1a2a1a] text-gray-200"
-            }`}>
-              <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{msg.content}</pre>
-            </div>
-          ))}
-        </>
-      )}
-
-      {aiTab === "issues" && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-gray-600">
-            Click <span className="text-purple-400">Debug</span> to review issues in the current file.
-          </p>
-          {aiResponse && aiTab === "issues" && (
-            <div className="bg-[#1e1e2e] rounded p-2 text-xs text-gray-300">
-              <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{aiResponse}</pre>
-            </div>
-          )}
-        </div>
-      )}
-
-      {aiTab === "suggest" && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-gray-600">
-            Click <span className="text-purple-400">Improve</span> to get refactoring suggestions.
-          </p>
-          {aiResponse && aiTab === "suggest" && (
-            <div className="bg-[#12120d] border border-[#3a3a1a] rounded p-2 text-xs text-yellow-200">
-              <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{aiResponse}</pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-
-    {/* Quick actions + prompt */}
-    <div className="border-t border-gray-700 p-2 flex flex-col gap-2">
-      <div className="flex flex-wrap gap-1">
-        {[
-          { label: "Explain", prompt: "Explain this code clearly" },
-          { label: "Debug", prompt: "Find bugs and suggest fixes" },
-          { label: "Improve", prompt: "Suggest improvements or refactoring" },
-          { label: "Add types", prompt: "Add proper TypeScript types where missing" },
-        ].map(({ label, prompt }) => (
-          <button
-            key={label}
-            onClick={() => { setAiTab("chat"); askAI(prompt); }}
-            disabled={isAiLoading}
-            className="text-[10px] px-2 py-1 bg-[#1e1e2e] text-gray-400 hover:text-purple-400 hover:border-purple-700 border border-gray-700 rounded disabled:opacity-40"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="flex gap-1">
-        <textarea
-          rows={2}
-          value={aiPrompt}
-          onChange={(e) => setAiPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (aiPrompt.trim()) { setAiTab("chat"); askAI(aiPrompt.trim()); }
-            }
-          }}
-          placeholder="Ask about this file..."
-          className="flex-1 bg-[#0d0d1a] border border-gray-700 focus:border-purple-700 rounded px-2 py-1 text-xs text-gray-300 font-mono resize-none outline-none"
-        />
-        <button
-          onClick={() => { if (aiPrompt.trim()) { setAiTab("chat"); askAI(aiPrompt.trim()); } }}
-          disabled={isAiLoading || !aiPrompt.trim()}
-          className="px-2 bg-purple-900 hover:bg-purple-800 text-purple-300 rounded disabled:opacity-40"
-        >
-          ↑
-        </button>
-      </div>
-    </div>
-  </div>
-)}
         </div>
 
         {/* Monaco editor */}
@@ -693,133 +723,7 @@ const [isAiLoading, setIsAiLoading] = useState(false);
               {loading ? "Loading project..." : "Select a file to start editing"}
             </div>
           )}
-          {/* AI Panel */}
-{showAiPanel && (
-  <div className="w-72 bg-[#12121e] border-l border-gray-700 flex flex-col text-sm">
-    
-    {/* Header */}
-    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
-      <span className="text-purple-400 text-xs font-medium flex items-center gap-1.5">
-        ✦ AI Assistant
-      </span>
-      <button onClick={() => setShowAiPanel(false)} className="text-gray-600 hover:text-gray-300 text-xs">✕</button>
-    </div>
 
-    {/* Tabs */}
-    <div className="flex border-b border-gray-700">
-      {(["issues", "suggest", "chat"] as const).map((tab) => (
-        <button
-          key={tab}
-          onClick={() => setAiTab(tab)}
-          className={`flex-1 py-1.5 text-xs capitalize transition-colors ${
-            aiTab === tab
-              ? "text-purple-400 border-b border-purple-500"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          {tab}
-        </button>
-      ))}
-    </div>
-
-    {/* Body */}
-    <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-      {aiTab === "chat" && (
-        <>
-          {aiMessages.length === 0 && !isAiLoading && (
-            <p className="text-xs text-gray-600 text-center mt-8">
-              Use a quick action or ask anything about this file.
-            </p>
-          )}
-          {isAiLoading && (
-            <div className="text-xs text-purple-400 animate-pulse">AI is thinking...</div>
-          )}
-          {aiWarning && (
-            <div className="text-xs text-yellow-500 bg-yellow-950 rounded px-2 py-1.5">{aiWarning}</div>
-          )}
-          {aiMessages.map((msg, i) => (
-            <div key={i} className={`text-xs rounded px-2 py-1.5 ${
-              msg.role === "user"
-                ? "bg-[#1e1e2e] text-gray-400 self-end max-w-[90%]"
-                : "bg-[#1a2a1a] text-gray-200"
-            }`}>
-              <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{msg.content}</pre>
-            </div>
-          ))}
-        </>
-      )}
-
-      {aiTab === "issues" && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-gray-600">
-            Click <span className="text-purple-400">Debug</span> to review issues in the current file.
-          </p>
-          {aiResponse && aiTab === "issues" && (
-            <div className="bg-[#1e1e2e] rounded p-2 text-xs text-gray-300">
-              <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{aiResponse}</pre>
-            </div>
-          )}
-        </div>
-      )}
-
-      {aiTab === "suggest" && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-gray-600">
-            Click <span className="text-purple-400">Improve</span> to get refactoring suggestions.
-          </p>
-          {aiResponse && aiTab === "suggest" && (
-            <div className="bg-[#12120d] border border-[#3a3a1a] rounded p-2 text-xs text-yellow-200">
-              <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{aiResponse}</pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-
-    {/* Quick actions + prompt */}
-    <div className="border-t border-gray-700 p-2 flex flex-col gap-2">
-      <div className="flex flex-wrap gap-1">
-        {[
-          { label: "Explain", prompt: "Explain this code clearly" },
-          { label: "Debug", prompt: "Find bugs and suggest fixes" },
-          { label: "Improve", prompt: "Suggest improvements or refactoring" },
-          { label: "Add types", prompt: "Add proper TypeScript types where missing" },
-        ].map(({ label, prompt }) => (
-          <button
-            key={label}
-            onClick={() => { setAiTab("chat"); askAI(prompt); }}
-            disabled={isAiLoading}
-            className="text-[10px] px-2 py-1 bg-[#1e1e2e] text-gray-400 hover:text-purple-400 hover:border-purple-700 border border-gray-700 rounded disabled:opacity-40"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="flex gap-1">
-        <textarea
-          rows={2}
-          value={aiPrompt}
-          onChange={(e) => setAiPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (aiPrompt.trim()) { setAiTab("chat"); askAI(aiPrompt.trim()); }
-            }
-          }}
-          placeholder="Ask about this file..."
-          className="flex-1 bg-[#0d0d1a] border border-gray-700 focus:border-purple-700 rounded px-2 py-1 text-xs text-gray-300 font-mono resize-none outline-none"
-        />
-        <button
-          onClick={() => { if (aiPrompt.trim()) { setAiTab("chat"); askAI(aiPrompt.trim()); } }}
-          disabled={isAiLoading || !aiPrompt.trim()}
-          className="px-2 bg-purple-900 hover:bg-purple-800 text-purple-300 rounded disabled:opacity-40"
-        >
-          ↑
-        </button>
-      </div>
-    </div>
-  </div>
-)}
         </div>
 
         {/* Status bar */}
