@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     return new Response("Invalid credentials", { status: 401 });
   }
 
-  const token = signToken({ id: user.id });
+  const token = signToken({ id: user.id, name: user.name, email: user.email });
 
   const cookieStore = await cookies();
   cookieStore.set("token", token, {
