@@ -51,32 +51,40 @@ export default function Home() {
   };
 
   const handleTemplateSelect = async (templateId: string) => {
-    try {
-      //  Now calls Next.js API route → Prisma → Neon
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "my-project", template: templateId }),
-      });
+  try {
+    
+    const auth = await fetch("/api/auth/me");
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create project");
-
-      const newProjectId = data.projectId;
-      const newUrl = `${window.location.origin}?projectId=${newProjectId}`;
-      window.history.pushState({}, "", newUrl);
-
-      setProjectId(newProjectId);
-      await waitForFiles(newProjectId);
-      setFilesReady(true);
-    } catch (err) {
-      console.error("Create project failed:", err);
-      setFilesReady(true);
+    if (!auth.ok) {
+      window.location.href = "/auth/login";
+      return;
     }
-  };
+
+    
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "my-project", template: templateId }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to create project");
+
+    const newProjectId = data.projectId;
+    const newUrl = `${window.location.origin}?projectId=${newProjectId}`;
+    window.history.pushState({}, "", newUrl);
+
+    setProjectId(newProjectId);
+    await waitForFiles(newProjectId);
+    setFilesReady(true);
+  } catch (err) {
+    console.error("Create project failed:", err);
+    setFilesReady(true);
+  }
+};
 
 
-  // Initial page loading
+ 
   if (isLoading) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-[#1e1e1e] text-white gap-4">
@@ -86,12 +94,12 @@ export default function Home() {
     );
   }
 
-  // Show landing page first
+  
   if (!projectId) {
-    return <LandingPage />;
+    return <LandingPage onTemplateSelect={handleTemplateSelect} />;
   }
 
-  // Show loading when project exists but files not ready
+ 
   if (!filesReady) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-[#1e1e1e] text-white gap-4">

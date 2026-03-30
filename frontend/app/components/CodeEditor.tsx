@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { MonacoBinding } from "y-monaco";
+import PresenceHub from "./PresenceHub";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -67,6 +68,16 @@ export default function VSCodeUI({ projectId }: Props) {
   const [aiWarning, setAiWarning] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [activeUsers, setActiveUsers] = useState<
+    { userId: string; name: string | null; email: string | null; color: string }[]
+  >([]);
+  const [currentUser, setCurrentUser] = useState<{
+    name: string | null;
+    email: string | null;
+  } | null>(null);
+  const tokenRef = useRef<string | null>(null);
+
 
   useEffect(() => {
     if (!projectId) return;
@@ -97,6 +108,21 @@ export default function VSCodeUI({ projectId }: Props) {
     }
     cleanupYjs();
   }, [activeFile, projectId]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((u) => {
+        setCurrentUser({ name: u.name, email: u.email })
+        setCurrentUserId(u.id);
+      })
+      .catch(console.error);
+
+    fetch("/api/auth/token")
+      .then((r) => r.json())
+      .then(({ token }) => { tokenRef.current = token; })
+      .catch(console.error)
+  }, []);
 
 
   // AI
@@ -162,7 +188,14 @@ export default function VSCodeUI({ projectId }: Props) {
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
-    const provider = new WebsocketProvider("ws://localhost:1234", roomName, ydoc);
+
+    const wsUrl = `ws://localhost:1234`;
+    const provider = new WebsocketProvider(wsUrl, roomName, ydoc, {
+      params: {
+        projectId,
+        token: tokenRef.current || "",
+      },
+    });
     providerRef.current = provider;
 
     const yText = ydoc.getText("content");
@@ -179,9 +212,26 @@ export default function VSCodeUI({ projectId }: Props) {
     );
     bindingRef.current = binding;
 
+
+    const color = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")}`;
     provider.awareness.setLocalStateField("user", {
-      name: `User-${Math.floor(Math.random() * 9000) + 1000}`,
-      color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+      name: currentUser?.name || currentUser?.email || "Anonymous",
+      email: currentUser?.email || null,
+      color,
+    });
+
+
+    provider.awareness.on("change", () => {
+      const states = Array.from(provider.awareness.getStates().entries());
+      const users = states
+        .filter(([, state]) => state?.user)
+        .map(([clientId, state]) => ({
+          userId: String(clientId),
+          name: state.user.name || null,
+          email: state.user.email || null,
+          color: state.user.color || "#888",
+        }));
+      setActiveUsers(users);
     });
   }
 
@@ -637,6 +687,41 @@ export default function VSCodeUI({ projectId }: Props) {
           </div>
         )}
       </div>
+      {/* Presence bar — who's in this project */}
+      {activeUsers.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1 bg-black/30 border-b border-white/10">
+          <span className="text-xs text-white/30">In this file:</span>
+          <div className="flex items-center gap-1.5">
+            {activeUsers.map((u) => (
+              <div
+                key={u.userId}
+                className="relative group"
+              >
+                {/* Avatar circle */}
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white uppercase cursor-default"
+                  style={{ backgroundColor: u.color }}
+                >
+                  {(u.name || u.email || "?")[0]}
+                </div>
+
+                {/* Tooltip on hover */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:flex flex-col items-center z-50">
+                  <div className="bg-[#1e1e1e] border border-white/10 rounded px-2 py-1 text-xs whitespace-nowrap shadow-lg">
+                    <p className="text-white/90 font-medium">{u.name || "Anonymous"}</p>
+                    {u.email && <p className="text-white/40">{u.email}</p>}
+                  </div>
+                  <div className="w-1.5 h-1.5 bg-[#1e1e1e] border-r border-b border-white/10 rotate-45 -mt-px" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {activeUsers.length === 1 && (
+            <span className="text-xs text-white/20 ml-1">Only you</span>
+          )}
+        </div>
+      )}
 
 
       {/* Editor area */}
@@ -732,6 +817,10 @@ export default function VSCodeUI({ projectId }: Props) {
           <span>{activeFileObj ? getLanguage(activeFileObj.name) : ""}</span>
         </div>
       </div>
+      <PresenceHub
+        activeUsers={activeUsers}
+        currentUserId={currentUserId ?? undefined}
+      />
     </div>
   );
 }
