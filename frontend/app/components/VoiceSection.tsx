@@ -85,7 +85,7 @@ const VoiceSection = () => {
               key={i}
               className="w-1.5 h-full rounded-full opacity-0 origin-center will-change-transform"
               style={{
-                backgroundColor: `hsl(var(--waveform))`,
+                backgroundColor: `#6366f1`,
                 transform: "scaleY(0.2)",
               }}
             />
@@ -100,7 +100,7 @@ const VoiceSection = () => {
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             Talk like you're there.
           </h2>
-          <p className="text-base text-muted-foreground leading-relaxed">
+          <p className="text-base text-gray-400 leading-relaxed">
             Persistent, high-fidelity voice channels. Just open and talk.
           </p>
         </div>
