@@ -9,9 +9,11 @@ const AiSection = dynamic(() => import("@/app/components/AiSection"), { ssr: fal
 const VoiceSection = dynamic(() => import("@/app/components/VoiceSection"), { ssr: false });
 const FooterSection = dynamic(() => import("@/app/components/FooterSection"), { ssr: false });
 
-const LandingPage = () => (
+type Props = { onTemplateSelect: (templateId: string) => void };
+
+const LandingPage = ({ onTemplateSelect }: Props) => (
   <div className="bg-background min-h-screen">
-    <Navbar />
+    <Navbar onTemplateSelect={onTemplateSelect} />
     <HeroSection />
     <MultiUserSection />
     <AiSection />
