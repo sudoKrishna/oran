@@ -1,63 +1,62 @@
-import { cookies } from "next/headers";
+// import { getServerSession } from "next-auth";
+// import { authOptions } from "@/lib/auth";
 
-export default async function DashboardPage() {
-    const cookieStore = await cookies();
+// export default async function Dashboard() {
+//   const session = await getServerSession(authOptions);
 
-  cookieStore.get("token");
+//   if (!session) {
+//     return <div>Unauthorized</div>;
+//   }
+
+//   return <div>Welcome {session.user?.email}</div>;
+// }
+
+"use client";
+import { useEffect, useRef } from "react";
+import gsap from "gsap";
+import Sidebar from "./components/Sidebar";
+import TopBar from "./components/TopBar";
+import UpgradeBanner from "./components/UpgradeBanner";
+import ProjectCard from "./components/ProjectCard";
+import { useSession } from "next-auth/react";
+
+const projects = [
+  { name: "sharp-silence", createdBy: "Created by you", time: "15h ago", type: "Sandbox" },
+  { name: "cool-breeze", createdBy: "Created by you", time: "2d ago", type: "Devbox" },
+  { name: "bright-dawn", createdBy: "Created by you", time: "5d ago", type: "Sandbox" },
+];
+
+const Index = () => {
+  const { data: session } = useSession();
+  const titleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!titleRef.current) return;
+    gsap.fromTo(titleRef.current, { y: 15, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, delay: 0.5, ease: "power3.out" });
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto p-8">
-        <div className="bg-white rounded-2xl shadow-sm border p-8">
-          <h1 className="text-3xl font-semibold mb-2">
-            Dashboard
-          </h1>
+    <div className="flex h-screen bg-background overflow-hidden">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopBar session={session} />
+        <main className="flex-1 overflow-y-auto p-6">
+          <UpgradeBanner />
 
-          <p className="text-gray-500 mb-6">
-            Welcome to your dashboard
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-            <div className="p-6 rounded-xl border bg-gray-50">
-              <h2 className="font-medium text-lg">
-                Projects
-              </h2>
-              <p className="text-gray-500 mt-2">
-                Manage your projects
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl border bg-gray-50">
-              <h2 className="font-medium text-lg">
-                Settings
-              </h2>
-              <p className="text-gray-500 mt-2">
-                Account settings
-              </p>
-            </div>
-
-            <div className="p-6 rounded-xl border bg-gray-50">
-              <h2 className="font-medium text-lg">
-                Usage
-              </h2>
-              <p className="text-gray-500 mt-2">
-                View usage analytics
-              </p>
-            </div>
-
+          <div ref={titleRef} className="mt-8 opacity-0">
+            <h1 className="text-2xl font-semibold text-foreground">Recent</h1>
+            <p className="text-sm text-muted-foreground mt-1">Pick up where you left off</p>
           </div>
 
-          <form action="/api/auth/logout" method="POST" className="mt-8">
-            <button
-              className="bg-black text-white px-6 py-3 rounded-xl hover:opacity-90 transition"
-            >
-              Logout
-            </button>
-          </form>
-
-        </div>
+          <div className="flex flex-wrap gap-4 mt-5">
+            {projects.map((p, i) => (
+              <ProjectCard key={p.name} {...p} delay={0.6 + i * 0.1} />
+            ))}
+          </div>
+        </main>
       </div>
     </div>
   );
-}
+};
+
+export default Index;
