@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import gsap from "gsap";
 import TemplatePicker from "./TemplatePicker";
 
@@ -10,13 +11,11 @@ const Navbar = ({ onTemplateSelect }: Props) => {
   const navRef = useRef<HTMLElement>(null);
   const router = useRouter();
 
+  const { data: session, status } = useSession(); 
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [showDropdown, setShowDropdown] = useState(false);
 
   useEffect(() => {
-
     if (navRef.current) {
       gsap.fromTo(
         navRef.current,
@@ -24,27 +23,10 @@ const Navbar = ({ onTemplateSelect }: Props) => {
         { y: 0, opacity: 1, duration: 1, ease: "power4.out", delay: 0.5 }
       );
     }
-
-
-    checkAuth();
   }, []);
 
-  const checkAuth = async () => {
-    const res = await fetch("/api/auth/me");
-
-    if (res.ok) {
-      const data = await res.json();
-      console.log("Auth user:", data);
-      setUser(data);
-    }
-  };
-
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", {
-      method: "POST",
-    });
-
-    setIsLoggedIn(false);
+    await signOut({ redirect: false });
     router.push("/");
   };
 
@@ -81,13 +63,13 @@ const Navbar = ({ onTemplateSelect }: Props) => {
               Voice
             </a>
 
-            {user ? (
+            {session?.user ? (
               <div className="relative">
                 <button
                   onClick={() => setShowDropdown(!showDropdown)}
                   className="w-8 h-8 rounded-full bg-black text-white text-xs flex items-center justify-center"
                 >
-                  {user.email?.charAt(0).toUpperCase()}
+                  {session.user.email?.charAt(0).toUpperCase()}
                 </button>
 
                 {showDropdown && (
