@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import GetUserFromRequest from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export async function GET() {
-  const user = await GetUserFromRequest();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await getServerSession(authOptions);
 
-  const token = (await cookies()).get("token")?.value;
-  return NextResponse.json({ token });
+  if (!session) {
+    return NextResponse.json({ user: null }, { status: 401 });
+  }
+
+  return NextResponse.json({ user: session.user });
 }
