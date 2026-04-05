@@ -1,7 +1,7 @@
-import { WebSocketServer } from "ws";
+const { WebSocketServer } = require("ws");
 const { setupWSConnection } = require("y-websocket/bin/utils");
-import http from "http";
-import jwt from "jsonwebtoken";
+const http = require("http");
+const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
