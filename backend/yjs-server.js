@@ -1,5 +1,5 @@
 import { WebSocketServer } from "ws";
-import { setupWSConnection } from "y-websocket/bin/utils.cjs";
+const { setupWSConnection } = require("y-websocket/bin/utils");
 import http from "http";
 import jwt from "jsonwebtoken";
 
