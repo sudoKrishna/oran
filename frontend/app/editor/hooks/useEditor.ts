@@ -95,7 +95,7 @@ export function useYjs(projectId: string) {
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
 
-    const provider = new WebsocketProvider(`ws://localhost:1234`, roomName, ydoc, {
+    const provider = new WebsocketProvider(`wss://oran.onrender.com`, roomName, ydoc, {
       params: { projectId, token: tokenRef.current || "" },
     });
     providerRef.current = provider;

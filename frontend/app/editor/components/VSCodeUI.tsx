@@ -222,7 +222,7 @@ export default function VSCodeUI({ projectId }: Props) {
     const roomName = `project-${projectId}-${activeFile}`;
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
-    const provider = new WebsocketProvider(`ws://localhost:1234`, roomName, ydoc, {
+    const provider = new WebsocketProvider(`wss://oran.onrender.com`, roomName, ydoc, {
       params: { projectId, token: tokenRef.current || "" },
     });
     providerRef.current = provider;
