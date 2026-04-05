@@ -64,12 +64,15 @@ const httpServer = http.createServer((req, res) => {
   res.end();
 });
 
-httpServer.listen(1235, () =>
-  console.log("Presence HTTP running on http://localhost:1235")
+const PORT = process.env.PORT || 1234;
+
+
+httpServer.listen(PORT, () =>
+  console.log(`Presence HTTP running on http://localhost:${PORT}`)
 );
 
 
-const wss = new WebSocketServer({ port: 1234 });
+const wss = new WebSocketServer({ server: httpServer });
 
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url, "http://localhost");
