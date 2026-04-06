@@ -193,16 +193,19 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
 
 const safeUserId = currentUserId ?? null;
 
-useWebRTC(safeUserId as string, peerIds);
+
+  const micStreamRef = useRef<MediaStream | null>(null);
   const hubRef = useRef<HTMLButtonElement>(null);
   const orbsContainerRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<SVGSVGElement>(null);
   const orbRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const micStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
   const scrollAccumRef = useRef<number>(0);
+
+useWebRTC(safeUserId as string, peerIds, micStreamRef, micOn);
+
 
   const RADIUS = 110;
   const HUB_SIZE = 52;
