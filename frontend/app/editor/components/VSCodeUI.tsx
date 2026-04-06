@@ -1,26 +1,5 @@
 "use client";
 
-/**
- * LUMINA CODE — AI-Native Code Editor
- * Main orchestrator. Logic unchanged; UI split into sub-components.
- *
- * GSAP Animation Manifest:
- * ─────────────────────────────────────────────────────────────────
- * TRIGGER               │ EFFECT                  │ EASE / DURATION
- * ─────────────────────────────────────────────────────────────────
- * AI Indexing           │ Context Ripple on lines  │ power2.inOut / 1.2s
- * AI Suggestion         │ Ghost text shimmer       │ power2.out / 0.4s stagger 0.05
- * AI Panel Open         │ FLIP panel expansion     │ CustomEase "snappy" / 0.35s
- * AI Panel Close        │ Collapse + blur fade     │ power3.in / 0.25s
- * Error Detected        │ Orb amber pulse          │ elastic.out(1, 0.3) / 0.8s
- * Diff Accept           │ MorphSVG line transition │ power2.inOut / 0.5s
- * Terminal Expand       │ CustomEase organic snap  │ "M0,0 C0.14,0 0.27,0.5 0.45,0.6 0.72,0.72 0.9,0.9 1,1" / 0.45s
- * File Tab Switch       │ Crossfade + slide        │ power2.out / 0.2s
- * Save                  │ Ripple from save button  │ power1.out / 0.6s
- * Hover proximity       │ Control fade-in          │ power2.out / 0.15s
- * ─────────────────────────────────────────────────────────────────
- */
-
 import { getSocket } from "@/lib/terminalSocket";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -50,7 +29,6 @@ const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 type Props = { projectId: string };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function findFirstFile(nodes: FileNode[] | null | undefined): FileNode | null {
   if (!nodes?.length) return null;
@@ -67,10 +45,9 @@ function removeNode(nodes: FileNode[], path: string): FileNode[] {
     .map((n) => (n.children ? { ...n, children: removeNode(n.children, path) } : n));
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function VSCodeUI({ projectId }: Props) {
-  // ── File state ─────────────────────────────────────────────────
+ 
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -80,13 +57,13 @@ export default function VSCodeUI({ projectId }: Props) {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── YJS refs ───────────────────────────────────────────────────
+
   const providerRef = useRef<WebsocketProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
   const isFirstRender = useRef(true);
 
-  // ── AI state ───────────────────────────────────────────────────
+
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelMounted, setAiPanelMounted] = useState(false);
   const [aiTab, setAiTab] = useState<AiTab>("issues");
@@ -96,19 +73,18 @@ export default function VSCodeUI({ projectId }: Props) {
   const [aiWarning, setAiWarning] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // ── Auth / presence ────────────────────────────────────────────
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const [currentUser, setCurrentUser] = useState<{ name: string | null; email: string | null } | null>(null);
   const tokenRef = useRef<string | null>(null);
 
-  // ── Animation refs ─────────────────────────────────────────────
+
   const aiPanelRef = useRef<HTMLDivElement>(null);
   const orbRef = useRef<HTMLSpanElement>(null);
   const editorAreaRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ── Load file tree on mount ────────────────────────────────────
+
   useEffect(() => {
     if (!projectId) return;
     fetch(`/api/files/${projectId}`)
@@ -123,14 +99,12 @@ export default function VSCodeUI({ projectId }: Props) {
       .finally(() => setLoading(false));
   }, [projectId]);
 
-  // ── YJS cleanup on file change ─────────────────────────────────
   useEffect(() => { return () => cleanupYjs(); }, []);
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     cleanupYjs();
   }, [activeFile, projectId]);
 
-  // ── Auth ───────────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -142,7 +116,7 @@ export default function VSCodeUI({ projectId }: Props) {
       .catch(console.error);
   }, []);
 
-  // ── AI loading orb ─────────────────────────────────────────────
+
   useEffect(() => {
     if (!orbRef.current) return;
     if (isAiLoading) {
@@ -153,14 +127,14 @@ export default function VSCodeUI({ projectId }: Props) {
     }
   }, [isAiLoading]);
 
-  // ── Ghost text on new AI messages ──────────────────────────────
+ 
   useEffect(() => {
     if (aiMessages.length > 0) {
       setTimeout(() => animateGhostText(".ai-msg-new"), 50);
     }
   }, [aiMessages]);
 
-  // ── AI panel toggle ────────────────────────────────────────────
+
   const handleToggleAiPanel = () => {
     if (showAiPanel) {
       if (aiPanelRef.current) {
@@ -178,7 +152,6 @@ export default function VSCodeUI({ projectId }: Props) {
     }
   };
 
-  // ── AI logic ───────────────────────────────────────────────────
   const askAI = async (userPrompt: string) => {
     if (!activeFile) { alert("Open a file first before using AI"); return; }
     setIsAiLoading(true);
@@ -210,7 +183,6 @@ export default function VSCodeUI({ projectId }: Props) {
     }
   };
 
-  // ── YJS ────────────────────────────────────────────────────────
   function cleanupYjs() {
     bindingRef.current?.destroy(); bindingRef.current = null;
     providerRef.current?.destroy(); providerRef.current = null;
@@ -249,7 +221,6 @@ export default function VSCodeUI({ projectId }: Props) {
     });
   }
 
-  // ── File operations ────────────────────────────────────────────
   function openFile(node: FileNode) {
     if (node.type !== "file") return;
     const already = openFiles.find((f) => f.path === node.path);
@@ -373,7 +344,7 @@ export default function VSCodeUI({ projectId }: Props) {
 
   const activeFileObj = openFiles.find((f) => f.path === activeFile) ?? null;
 
-  // ── Render ─────────────────────────────────────────────────────
+  
   return (
     <>
       <style>{`
@@ -404,11 +375,10 @@ export default function VSCodeUI({ projectId }: Props) {
           }}
         />
 
-        {/* Ambient gradient orb */}
+  
         <div className="fixed -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full pointer-events-none z-0"
           style={{ background: "radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)" }} />
 
-        {/* Activity Bar */}
         <ActivityBar userInitial={currentUser?.name?.[0] ?? currentUser?.email?.[0] ?? "?"} />
 
         {/* Sidebar */}
@@ -506,6 +476,7 @@ export default function VSCodeUI({ projectId }: Props) {
 
         {/* Presence */}
         <PresenceHub activeUsers={activeUsers} currentUserId={currentUserId ?? undefined} />
+        
       </div>
     </>
   );

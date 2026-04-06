@@ -191,9 +191,9 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
   );
 
 
-  if (!currentUserId) return null;
+const safeUserId = currentUserId ?? null;
 
-  useWebRTC(currentUserId, peerIds);
+useWebRTC(safeUserId as string, peerIds);
   const hubRef = useRef<HTMLButtonElement>(null);
   const orbsContainerRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<SVGSVGElement>(null);
