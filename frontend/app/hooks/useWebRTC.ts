@@ -13,6 +13,7 @@ export function useWebRTC(
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
   const addPendingCandidates = async (pc: RTCPeerConnection, fromId: string) => {
+    console.log("🎤 local stream:", micStreamRef.current);
     const candidates = pendingCandidates.current.get(fromId) || [];
     for (const c of candidates) {
       try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
@@ -35,7 +36,9 @@ export function useWebRTC(
     // Add mic track if available
     const stream = micStreamRef.current;
     if (stream) {
-      stream.getAudioTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getAudioTracks().forEach((track) => {
+        console.log("🎤 adding track", track);
+        pc.addTrack(track, stream)});
     } else {
       // Add empty audio track as placeholder so the sender slot exists
       const emptyStream = new MediaStream();
@@ -46,15 +49,30 @@ export function useWebRTC(
       pc.addTrack(silentTrack, emptyStream);
     }
 
-    pc.ontrack = (e) => {
-      console.log(`[WebRTC] got remote track from ${targetId}`);
-      const audio = new Audio();
-      audio.srcObject = e.streams[0];
-      audio.autoplay = true;
-      audio.volume = 1.0;
-      audio.play().catch(console.error);
-      (pc as any)._remoteAudio = audio;
-    };
+pc.ontrack = (e) => {
+  
+  console.log(" TRACK RECEIVED", e.streams);
+  console.log("[WebRTC] got remote track", e);
+
+  let audio = document.getElementById(`audio-${targetId}`) as HTMLAudioElement;
+
+  if (!audio) {
+    audio = document.createElement("audio");
+    audio.id = `audio-${targetId}`;
+    audio.autoplay = true;
+    audio.controls = true; // 👈 for debugging
+    audio.setAttribute("playsinline", "true"); 
+    document.body.appendChild(audio);
+  }
+
+  audio.srcObject = e.streams[0];
+
+  audio.play().catch((err) => {
+    console.error("❌ audio play failed", err);
+  }).catch((err) => {
+    console.error("❌ audio play failed", err);
+  });
+};
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
@@ -106,8 +124,9 @@ export function useWebRTC(
     peersRef.current.forEach((pc) => {
       const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
       if (sender) {
+         console.log(" replacing silent track with real mic");
         sender.replaceTrack(audioTrack).catch(console.error);
-        audioTrack.enabled = micOn;
+       audioTrack.enabled = true;
       }
     });
   }, [micOn, micStreamRef]);
