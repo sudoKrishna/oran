@@ -134,7 +134,7 @@ export default function LoginPage() {
     });
 
     if (res?.ok) {
-      router.push("/dashboard");
+      router.push("/");
     } else {
       setError("Invalid email or password. Please try again.");
       setLoading(false);
