@@ -6,138 +6,172 @@ export function useWebRTC(
   currentUserId: string,
   activeUserIds: string[],
   micStreamRef: React.RefObject<MediaStream | null>,
-  micOn: boolean                                      
+  micOn: boolean
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
-  const createPeer = useCallback(
-    (targetId: string, isInitiator: boolean) => {
-      // Don't create duplicate connections
-      if (peersRef.current.has(targetId)) return peersRef.current.get(targetId)!;
+  const addPendingCandidates = async (pc: RTCPeerConnection, fromId: string) => {
+    const candidates = pendingCandidates.current.get(fromId) || [];
+    for (const c of candidates) {
+      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+    }
+    pendingCandidates.current.delete(fromId);
+  };
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ],
-      });
+  const createPeer = useCallback((targetId: string, isInitiator: boolean) => {
+    if (peersRef.current.has(targetId)) return peersRef.current.get(targetId)!;
 
-      // Add tracks from the shared mic stream (may be null if mic is off)
-      const stream = micStreamRef.current;
-      if (stream) {
-        stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
-        });
-      }
+    console.log(`[WebRTC] creating peer ${targetId}, initiator=${isInitiator}`);
 
-      // Play incoming audio
-      pc.ontrack = (e) => {
-        const audio = new Audio();
-        audio.srcObject = e.streams[0];
-        audio.autoplay = true;
-        // Keep reference so it doesn't get garbage collected
-        (pc as any)._remoteAudio = audio;
-      };
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          wsRef.current?.send(
-            JSON.stringify({
-              type: "ice-candidate",
-              target: targetId,
-              candidate: e.candidate,
-            })
-          );
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (
-          pc.connectionState === "failed" ||
-          pc.connectionState === "disconnected"
-        ) {
-          pc.close();
-          peersRef.current.delete(targetId);
-        }
-      };
-
-      if (isInitiator) {
-        pc.createOffer()
-          .then((offer) => pc.setLocalDescription(offer))
-          .then(() => {
-            wsRef.current?.send(
-              JSON.stringify({
-                type: "offer",
-                target: targetId,
-                sdp: pc.localDescription,
-              })
-            );
-          });
-      }
-
-      peersRef.current.set(targetId, pc);
-      return pc;
-    },
-    [micStreamRef]
-  );
-
-  // Mute/unmute tracks across ALL peer connections when micOn changes
-  useEffect(() => {
-    peersRef.current.forEach((pc) => {
-      pc.getSenders().forEach((sender) => {
-        if (sender.track && sender.track.kind === "audio") {
-          sender.track.enabled = micOn;
-        }
-      });
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ],
     });
-  }, [micOn]);
 
-  // WebSocket setup
+    // Add mic track if available
+    const stream = micStreamRef.current;
+    if (stream) {
+      stream.getAudioTracks().forEach((track) => pc.addTrack(track, stream));
+    } else {
+      // Add empty audio track as placeholder so the sender slot exists
+      const emptyStream = new MediaStream();
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      const silentTrack = dest.stream.getAudioTracks()[0];
+      emptyStream.addTrack(silentTrack);
+      pc.addTrack(silentTrack, emptyStream);
+    }
+
+    pc.ontrack = (e) => {
+      console.log(`[WebRTC] got remote track from ${targetId}`);
+      const audio = new Audio();
+      audio.srcObject = e.streams[0];
+      audio.autoplay = true;
+      audio.volume = 1.0;
+      audio.play().catch(console.error);
+      (pc as any)._remoteAudio = audio;
+    };
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        wsRef.current?.send(JSON.stringify({
+          type: "ice-candidate",
+          target: targetId,
+          candidate: e.candidate.toJSON(),
+        }));
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC] ${targetId} state: ${pc.connectionState}`);
+      if (pc.connectionState === "failed") {
+        pc.close();
+        peersRef.current.delete(targetId);
+      }
+    };
+
+    pc.onicegatheringstatechange = () => {
+      console.log(`[WebRTC] ICE gathering ${targetId}: ${pc.iceGatheringState}`);
+    };
+
+    if (isInitiator) {
+      pc.createOffer()
+        .then((offer) => pc.setLocalDescription(offer))
+        .then(() => {
+          wsRef.current?.send(JSON.stringify({
+            type: "offer",
+            target: targetId,
+            sdp: pc.localDescription,
+          }));
+          console.log(`[WebRTC] sent offer to ${targetId}`);
+        })
+        .catch(console.error);
+    }
+
+    peersRef.current.set(targetId, pc);
+    return pc;
+  }, [micStreamRef]);
+
+  // Sync mic track to all peers when micOn changes
+  useEffect(() => {
+    const stream = micStreamRef.current;
+    if (!stream) return;
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    peersRef.current.forEach((pc) => {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
+      if (sender) {
+        sender.replaceTrack(audioTrack).catch(console.error);
+        audioTrack.enabled = micOn;
+      }
+    });
+  }, [micOn, micStreamRef]);
+
+  // WebSocket setup — connects to /signal path now
   useEffect(() => {
     if (!currentUserId) return;
 
-    const ws = new WebSocket(WS_URL);
+    const url = new URL(WS_URL);
+    url.pathname = "/signal";
+    // carry existing query params (token, projectId) if needed
+    const ws = new WebSocket(url.toString());
     wsRef.current = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "register", userId: currentUserId }));
+      console.log("[WebRTC] signal WS connected");
     };
 
     ws.onmessage = async (e) => {
       let msg: any;
-      try {
-        msg = JSON.parse(e.data);
-      } catch {
-        return;
-      }
+      try { msg = JSON.parse(e.data); } catch { return; }
+
+      // Ignore presence messages
+      if (msg.type === "presence") return;
+
+      console.log(`[WebRTC] received ${msg.type} from ${msg.from}`);
 
       if (msg.type === "offer") {
+        // Only the peer with the lexicographically SMALLER id answers
+        // This prevents both peers from offering simultaneously
         const pc = createPeer(msg.from, false);
         await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        await addPendingCandidates(pc, msg.from);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        ws.send(
-          JSON.stringify({ type: "answer", target: msg.from, sdp: answer })
-        );
+        ws.send(JSON.stringify({ type: "answer", target: msg.from, sdp: answer }));
+        console.log(`[WebRTC] sent answer to ${msg.from}`);
       }
 
       if (msg.type === "answer") {
         const pc = peersRef.current.get(msg.from);
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        if (pc) {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          await addPendingCandidates(pc, msg.from);
+        }
       }
 
       if (msg.type === "ice-candidate") {
         const pc = peersRef.current.get(msg.from);
-        if (pc) {
+        if (pc && pc.remoteDescription) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-          } catch {
-            // Ignore stale candidates
+          } catch {}
+        } else {
+          // Buffer candidates that arrive before remote description is set
+          if (!pendingCandidates.current.has(msg.from)) {
+            pendingCandidates.current.set(msg.from, []);
           }
+          pendingCandidates.current.get(msg.from)!.push(msg.candidate);
         }
       }
     };
+
+    ws.onerror = (e) => console.error("[WebRTC] WS error", e);
 
     return () => {
       ws.close();
@@ -146,15 +180,15 @@ export function useWebRTC(
     };
   }, [currentUserId, createPeer]);
 
-  // Create peer connections when new users appear
+  // Only the user with the LARGER userId initiates — prevents double offers
   useEffect(() => {
     activeUserIds.forEach((uid) => {
       if (uid !== currentUserId && !peersRef.current.has(uid)) {
-        createPeer(uid, true);
+        const shouldInitiate = currentUserId > uid; // only one side initiates
+        createPeer(uid, shouldInitiate);
       }
     });
 
-    // Close connections for users who left
     peersRef.current.forEach((pc, uid) => {
       if (!activeUserIds.includes(uid)) {
         pc.close();
