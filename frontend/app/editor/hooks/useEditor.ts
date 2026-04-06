@@ -1,136 +1,180 @@
-"use client";
+import { useEffect, useRef, useCallback } from "react";
 
-import { useState, useRef, useCallback } from "react";
-import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
-import { MonacoBinding } from "y-monaco";
-import { OpenFile, FileNode, ActiveUser } from "../types";
-import { getLanguage } from "../lib/utils";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "wss://oran.onrender.com";
 
-// ─── useEditorFiles ────────────────────────────────────────────────────────────
-// Manages open files, active file, dirty state, and save logic.
+export function useWebRTC(
+  currentUserId: string,
+  activeUserIds: string[],
+  micStreamRef: React.RefObject<MediaStream | null>,
+  micOn: boolean
+) {
+  const wsRef = useRef<WebSocket | null>(null);
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
 
-export function useEditorFiles(projectId: string) {
-  const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
-  const [activeFile, setActiveFile] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
-  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Call this whenever mic stream becomes available
+  const syncTracksToAllPeers = useCallback(() => {
+    const stream = micStreamRef.current;
+    if (!stream) return;
 
-  const saveFile = useCallback(async (filePath: string, content: string) => {
-    setSaveStatus("saving");
-    try {
-      const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-      await fetch(`/api/files/${projectId}/${encodedPath}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    peersRef.current.forEach((pc) => {
+      const senders = pc.getSenders();
+      const audioSender = senders.find((s) => s.track?.kind === "audio");
+
+      if (audioSender) {
+        // Replace existing track
+        audioSender.replaceTrack(audioTrack);
+      } else {
+        // No sender yet — add the track fresh
+        pc.addTrack(audioTrack, stream);
+      }
+    });
+  }, [micStreamRef]);
+
+  const createPeer = useCallback(
+    (targetId: string, isInitiator: boolean) => {
+      if (peersRef.current.has(targetId)) return peersRef.current.get(targetId)!;
+
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
       });
-      setOpenFiles((prev) =>
-        prev.map((f) => (f.path === filePath ? { ...f, isDirty: false } : f))
-      );
-      setSaveStatus("saved");
-    } catch {
-      setSaveStatus("unsaved");
+
+      // Add track if stream already exists
+      const stream = micStreamRef.current;
+      if (stream) {
+        stream.getAudioTracks().forEach((track) => {
+          pc.addTrack(track, stream);
+        });
+      }
+
+      // Play incoming remote audio
+      pc.ontrack = (e) => {
+        const audio = new Audio();
+        audio.srcObject = e.streams[0];
+        audio.autoplay = true;
+        audio.play().catch(console.error);
+        (pc as any)._remoteAudio = audio; // prevent GC
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          wsRef.current?.send(
+            JSON.stringify({
+              type: "ice-candidate",
+              target: targetId,
+              candidate: e.candidate,
+            })
+          );
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[WebRTC] ${targetId} →`, pc.connectionState);
+        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+          pc.close();
+          peersRef.current.delete(targetId);
+        }
+      };
+
+      if (isInitiator) {
+        pc.createOffer()
+          .then((offer) => pc.setLocalDescription(offer))
+          .then(() => {
+            wsRef.current?.send(
+              JSON.stringify({
+                type: "offer",
+                target: targetId,
+                sdp: pc.localDescription,
+              })
+            );
+          });
+      }
+
+      peersRef.current.set(targetId, pc);
+      return pc;
+    },
+    [micStreamRef]
+  );
+
+  // ← KEY FIX: when micOn changes to true, push track to all peers
+  useEffect(() => {
+    if (micOn) {
+      syncTracksToAllPeers();
+    } else {
+      // Mute without removing the track
+      peersRef.current.forEach((pc) => {
+        pc.getSenders().forEach((sender) => {
+          if (sender.track?.kind === "audio") {
+            sender.track.enabled = false;
+          }
+        });
+      });
     }
-  }, [projectId]);
+  }, [micOn, syncTracksToAllPeers]);
 
-  function openFile(node: FileNode) {
-    if (node.type !== "file") return;
-    const already = openFiles.find((f) => f.path === node.path);
-    if (already) { setActiveFile(node.path); return; }
-    setOpenFiles((prev) => [
-      ...prev,
-      { name: node.name, path: node.path, content: node.content || "", isDirty: false },
-    ]);
-    setActiveFile(node.path);
-  }
+  // WebSocket setup
+  useEffect(() => {
+    if (!currentUserId) return;
 
-  function closeTab(filePath: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setOpenFiles((prev) => {
-      const idx = prev.findIndex((f) => f.path === filePath);
-      const next = prev.filter((f) => f.path !== filePath);
-      if (activeFile === filePath)
-        setActiveFile(next[idx]?.path ?? next[idx - 1]?.path ?? null);
-      return next;
-    });
-  }
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
 
-  function updateCode(value: string | undefined, currentActiveFile: string) {
-    const content = value || "";
-    setOpenFiles((prev) =>
-      prev.map((f) => (f.path === currentActiveFile ? { ...f, content, isDirty: true } : f))
-    );
-    setSaveStatus("unsaved");
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => saveFile(currentActiveFile, content), 600);
-  }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "register", userId: currentUserId }));
+    };
 
-  return { openFiles, setOpenFiles, activeFile, setActiveFile, saveStatus, saveFile, openFile, closeTab, updateCode };
-}
+    ws.onmessage = async (e) => {
+      let msg: any;
+      try { msg = JSON.parse(e.data); } catch { return; }
 
-// ─── useYjs ───────────────────────────────────────────────────────────────────
-// Manages collaborative YJS sessions per active file.
+      if (msg.type === "offer") {
+        const pc = createPeer(msg.from, false);
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: "answer", target: msg.from, sdp: answer }));
+      }
 
-export function useYjs(projectId: string) {
-  const providerRef = useRef<WebsocketProvider | null>(null);
-  const bindingRef = useRef<MonacoBinding | null>(null);
-  const ydocRef = useRef<Y.Doc | null>(null);
+      if (msg.type === "answer") {
+        const pc = peersRef.current.get(msg.from);
+        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      }
 
-  function cleanup() {
-    bindingRef.current?.destroy(); bindingRef.current = null;
-    providerRef.current?.destroy(); providerRef.current = null;
-    ydocRef.current?.destroy(); ydocRef.current = null;
-  }
+      if (msg.type === "ice-candidate") {
+        const pc = peersRef.current.get(msg.from);
+        if (pc) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } catch { /* ignore stale */ }
+        }
+      }
+    };
 
-  function mount(
-    editor: any,
-    activeFile: string,
-    currentContent: string,
-    tokenRef: React.MutableRefObject<string | null>,
-    currentUser: { name: string | null; email: string | null } | null,
-    onUsersChange: (users: ActiveUser[]) => void
-  ) {
-    const roomName = `project-${projectId}-${activeFile}`;
-    const ydoc = new Y.Doc();
-    ydocRef.current = ydoc;
+    return () => {
+      ws.close();
+      peersRef.current.forEach((pc) => pc.close());
+      peersRef.current.clear();
+    };
+  }, [currentUserId, createPeer]);
 
-    const provider = new WebsocketProvider(`wss://oran.onrender.com`, roomName, ydoc, {
-      params: { projectId, token: tokenRef.current || "" },
-    });
-    providerRef.current = provider;
-
-    const yText = ydoc.getText("content");
-    if (yText.length === 0 && currentContent) yText.insert(0, currentContent);
-
-    bindingRef.current = new MonacoBinding(
-      yText,
-      editor.getModel()!,
-      new Set([editor]),
-      provider.awareness
-    );
-
-    const color = `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0")}`;
-    provider.awareness.setLocalStateField("user", {
-      name: currentUser?.name || currentUser?.email || "Anonymous",
-      email: currentUser?.email || null,
-      color,
+  // Create/cleanup peers as users join or leave
+  useEffect(() => {
+    activeUserIds.forEach((uid) => {
+      if (uid !== currentUserId && !peersRef.current.has(uid)) {
+        createPeer(uid, true);
+      }
     });
 
-    provider.awareness.on("change", () => {
-      const states = Array.from(provider.awareness.getStates().entries());
-      onUsersChange(
-        states
-          .filter(([, s]) => s?.user)
-          .map(([id, s]) => ({
-            userId: String(id),
-            name: s.user.name || null,
-            email: s.user.email || null,
-            color: s.user.color || "#888",
-          }))
-      );
+    peersRef.current.forEach((pc, uid) => {
+      if (!activeUserIds.includes(uid)) {
+        pc.close();
+        peersRef.current.delete(uid);
+      }
     });
-  }
-
-  return { cleanup, mount };
+  }, [activeUserIds, currentUserId, createPeer]);
 }

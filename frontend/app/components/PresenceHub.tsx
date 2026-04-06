@@ -273,29 +273,35 @@ useWebRTC(safeUserId as string, peerIds, micStreamRef, micOn);
   }, []);
 
   // Mic 
-  const startMic = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = stream;
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-      analyserRef.current = analyser;
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteFrequencyData(data);
-        const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        setMyVolume(Math.min(avg / 80, 1));
-        animFrameRef.current = requestAnimationFrame(tick);
-      };
+const startMic = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStreamRef.current = stream;
+
+    // Re-enable track (in case it was disabled by mute)
+    stream.getAudioTracks().forEach((t) => (t.enabled = true));
+
+    const ctx = new AudioContext();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    analyserRef.current = analyser;
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      setMyVolume(Math.min(avg / 80, 1));
       animFrameRef.current = requestAnimationFrame(tick);
-      setMicOn(true);
-    } catch (e) {
-      console.error("Mic error:", e);
-    }
-  };
+    };
+    animFrameRef.current = requestAnimationFrame(tick);
+
+    setMicOn(true); // ← this triggers the useEffect in useWebRTC that calls syncTracksToAllPeers
+  } catch (e) {
+    console.error("Mic error:", e);
+  }
+};
 
   const stopMic = () => {
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
