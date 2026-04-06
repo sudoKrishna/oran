@@ -33,15 +33,19 @@ export function useWebRTC(
 
     const stream = micStreamRef.current;
     if (stream) {
-      const track = stream.getAudioTracks()[0];
-      if (track && track.readyState === "live") pc.addTrack(track, stream);
+      stream.getAudioTracks().forEach((track) => {
+        if (track.readyState === "live") pc.addTrack(track, stream);
+      });
     }
 
     pc.ontrack = (e) => {
       let audio = audioElements.current.get(targetId);
       if (!audio) {
         audio = document.createElement("audio");
+        audio.id = `audio-${targetId}`;
         audio.autoplay = true;
+        audio.controls = false;
+        audio.muted = false;
         audio.setAttribute("playsinline", "true");
         document.body.appendChild(audio);
         audioElements.current.set(targetId, audio);
@@ -51,11 +55,13 @@ export function useWebRTC(
     };
 
     pc.onicecandidate = (e) => {
-      if (e.candidate) wsRef.current?.send(JSON.stringify({
-        type: "ice-candidate",
-        target: targetId,
-        candidate: e.candidate.toJSON(),
-      }));
+      if (e.candidate) {
+        wsRef.current?.send(JSON.stringify({
+          type: "ice-candidate",
+          target: targetId,
+          candidate: e.candidate.toJSON(),
+        }));
+      }
     };
 
     pc.onconnectionstatechange = () => {
@@ -76,7 +82,7 @@ export function useWebRTC(
             sdp: pc.localDescription,
           }));
         })
-        .catch(() => {});
+        .catch(console.error);
     }
 
     peersRef.current.set(targetId, pc);
@@ -104,6 +110,7 @@ export function useWebRTC(
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
 
+    ws.onopen = () => {};
     ws.onmessage = async (e) => {
       let msg: any;
       try { msg = JSON.parse(e.data); } catch { return; }
@@ -138,18 +145,14 @@ export function useWebRTC(
     };
 
     ws.onerror = (e) => console.error(e);
-
-    return () => {
-      ws.close();
-      peersRef.current.forEach((pc) => pc.close());
-      peersRef.current.clear();
-    };
+    return () => { ws.close(); peersRef.current.forEach((pc) => pc.close()); peersRef.current.clear(); };
   }, [currentUserId, createPeer]);
 
   useEffect(() => {
     activeUserIds.forEach((uid) => {
       if (uid !== currentUserId && !peersRef.current.has(uid)) {
-        createPeer(uid, currentUserId > uid);
+        const shouldInitiate = currentUserId > uid;
+        createPeer(uid, shouldInitiate);
       }
     });
     peersRef.current.forEach((pc, uid) => {
