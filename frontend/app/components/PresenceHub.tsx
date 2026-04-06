@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback , useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { gsap } from "gsap";
 import { useWebRTC } from "@/app/hooks/useWebRTC";
 
@@ -191,7 +191,7 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
   );
 
 
-const safeUserId = currentUserId ?? null;
+  const safeUserId = currentUserId ?? null;
 
 
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -204,7 +204,12 @@ const safeUserId = currentUserId ?? null;
   const tlRef = useRef<gsap.core.Timeline | null>(null);
   const scrollAccumRef = useRef<number>(0);
 
-useWebRTC(safeUserId as string, peerIds, micStreamRef, micOn);
+  const { toggleSpeaker } = useWebRTC(
+    safeUserId as string,
+    peerIds,
+    micStreamRef,
+    micOn
+  );
 
 
   const RADIUS = 110;
@@ -273,46 +278,89 @@ useWebRTC(safeUserId as string, peerIds, micStreamRef, micOn);
   }, []);
 
   // Mic 
-const startMic = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micStreamRef.current = stream;
+  const audioContextRef = useRef<AudioContext | null>(null);
 
-    // Re-enable track (in case it was disabled by mute)
-    stream.getAudioTracks().forEach((t) => (t.enabled = true));
+  const startMic = async () => {
+    try {
+      // ✅ cleanup old
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
+        micStreamRef.current = null;
+      }
 
-    const ctx = new AudioContext();
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    source.connect(analyser);
-    analyserRef.current = analyser;
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
 
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => {
-      analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      setMyVolume(Math.min(avg / 80, 1));
+      // ✅ fresh stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const track = stream.getAudioTracks()[0];
+      console.log("🎤 NEW TRACK:", track?.readyState);
+
+      if (!track || track.readyState !== "live") {
+        console.error("❌ mic not live");
+        return;
+      }
+
+      track.enabled = true;
+      micStreamRef.current = stream;
+
+      // ✅ analyser
+      const ctx = new AudioContext();
+      audioContextRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        setMyVolume(Math.min(avg / 80, 1));
+        animFrameRef.current = requestAnimationFrame(tick);
+      };
+
       animFrameRef.current = requestAnimationFrame(tick);
-    };
-    animFrameRef.current = requestAnimationFrame(tick);
 
-    setMicOn(true); // ← this triggers the useEffect in useWebRTC that calls syncTracksToAllPeers
-  } catch (e) {
-    console.error("Mic error:", e);
-  }
-};
+      setMicOn(true);
+
+    } catch (e) {
+      console.error("Mic error:", e);
+    }
+  };
 
   const stopMic = () => {
-    micStreamRef.current?.getTracks().forEach((t) => t.stop());
-    micStreamRef.current = null;
+    console.log("🛑 stop mic");
+
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
     analyserRef.current = null;
-    cancelAnimationFrame(animFrameRef.current);
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+    }
+
     setMyVolume(0);
     setMicOn(false);
   };
 
   const toggleMic = () => (micOn ? stopMic() : startMic());
+
   useEffect(() => () => stopMic(), []);
 
   //  Enrich users 
@@ -441,17 +489,41 @@ const startMic = async () => {
               className="group"
               style={{ position: "absolute", transform: "translate(-50%, -50%)", opacity: 0 }}
             >
-              <UserOrb user={user} size={44} />
-              {user.isSpeaking && (
-                <div style={{
-                  position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)",
-                  marginTop: 4, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-                  border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
-                  padding: "2px 6px", fontSize: 9, color: user.color, whiteSpace: "nowrap", fontWeight: 500,
-                }}>
-                  speaking
-                </div>
-              )}
+              <div style={{ position: "relative" }}>
+                <UserOrb user={user} size={44} />
+
+                {/* 🔊 Speaker Toggle */}
+                {user.userId !== currentUserId && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const enabled = !(user as any)._speakerOn;
+                      (user as any)._speakerOn = enabled;
+                      toggleSpeaker(user.userId, enabled);
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(0,0,0,0.6)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      fontSize: 10,
+                      zIndex: 5,
+                    }}
+                    title="Toggle speaker"
+                  >
+                    {(user as any)._speakerOn === false ? "🔇" : "🔊"}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
 

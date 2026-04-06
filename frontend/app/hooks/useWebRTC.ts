@@ -12,11 +12,15 @@ export function useWebRTC(
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
+  //  store audio elements for speaker control
+  const audioElements = useRef<Map<string, HTMLAudioElement>>(new Map());
+
   const addPendingCandidates = async (pc: RTCPeerConnection, fromId: string) => {
-    console.log("🎤 local stream:", micStreamRef.current);
     const candidates = pendingCandidates.current.get(fromId) || [];
     for (const c of candidates) {
-      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch {}
     }
     pendingCandidates.current.delete(fromId);
   };
@@ -33,78 +37,76 @@ export function useWebRTC(
       ],
     });
 
-    // Add mic track if available
+    //  ONLY add real mic track (NO fake/silent track)
     const stream = micStreamRef.current;
     if (stream) {
       stream.getAudioTracks().forEach((track) => {
-        console.log("🎤 adding track", track);
-        pc.addTrack(track, stream)});
-    } else {
-      // Add empty audio track as placeholder so the sender slot exists
-      const emptyStream = new MediaStream();
-      const ctx = new AudioContext();
-      const dest = ctx.createMediaStreamDestination();
-      const silentTrack = dest.stream.getAudioTracks()[0];
-      emptyStream.addTrack(silentTrack);
-      pc.addTrack(silentTrack, emptyStream);
+        if (track.readyState === "live") {
+          console.log("🎤 adding LIVE track", track);
+          pc.addTrack(track, stream);
+        } else {
+          console.warn("⚠️ skipping dead track", track);
+        }
+      });
     }
 
-pc.ontrack = (e) => {
-  
-  console.log(" TRACK RECEIVED", e.streams);
-  console.log("[WebRTC] got remote track", e);
+    // 🔊 RECEIVE AUDIO
+    pc.ontrack = (e) => {
+      console.log("🔥 TRACK RECEIVED from", targetId);
 
-  let audio = document.getElementById(`audio-${targetId}`) as HTMLAudioElement;
+      let audio = audioElements.current.get(targetId);
 
-  if (!audio) {
-    audio = document.createElement("audio");
-    audio.id = `audio-${targetId}`;
-    audio.autoplay = true;
-    audio.controls = true; // 👈 for debugging
-    audio.setAttribute("playsinline", "true"); 
-    document.body.appendChild(audio);
-  }
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.id = `audio-${targetId}`;
+        audio.autoplay = true;
+        audio.controls = true; // debug
+        audio.setAttribute("playsinline", "true");
 
-  audio.srcObject = e.streams[0];
+        document.body.appendChild(audio);
+        audioElements.current.set(targetId, audio);
+      }
 
-  audio.play().catch((err) => {
-    console.error("❌ audio play failed", err);
-  }).catch((err) => {
-    console.error("❌ audio play failed", err);
-  });
-};
+      audio.srcObject = e.streams[0];
+
+      audio.play().catch((err) => {
+        console.error("❌ audio play failed", err);
+      });
+    };
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
-        wsRef.current?.send(JSON.stringify({
-          type: "ice-candidate",
-          target: targetId,
-          candidate: e.candidate.toJSON(),
-        }));
+        wsRef.current?.send(
+          JSON.stringify({
+            type: "ice-candidate",
+            target: targetId,
+            candidate: e.candidate.toJSON(),
+          })
+        );
       }
     };
 
     pc.onconnectionstatechange = () => {
       console.log(`[WebRTC] ${targetId} state: ${pc.connectionState}`);
-      if (pc.connectionState === "failed") {
+
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         pc.close();
         peersRef.current.delete(targetId);
+        audioElements.current.delete(targetId);
       }
-    };
-
-    pc.onicegatheringstatechange = () => {
-      console.log(`[WebRTC] ICE gathering ${targetId}: ${pc.iceGatheringState}`);
     };
 
     if (isInitiator) {
       pc.createOffer()
         .then((offer) => pc.setLocalDescription(offer))
         .then(() => {
-          wsRef.current?.send(JSON.stringify({
-            type: "offer",
-            target: targetId,
-            sdp: pc.localDescription,
-          }));
+          wsRef.current?.send(
+            JSON.stringify({
+              type: "offer",
+              target: targetId,
+              sdp: pc.localDescription,
+            })
+          );
           console.log(`[WebRTC] sent offer to ${targetId}`);
         })
         .catch(console.error);
@@ -114,30 +116,39 @@ pc.ontrack = (e) => {
     return pc;
   }, [micStreamRef]);
 
-  // Sync mic track to all peers when micOn changes
+  // ✅ Sync mic to peers
   useEffect(() => {
     const stream = micStreamRef.current;
     if (!stream) return;
-    const audioTrack = stream.getAudioTracks()[0];
-    if (!audioTrack) return;
+
+    const track = stream.getAudioTracks()[0];
+    if (!track || track.readyState !== "live") {
+      console.warn("⚠️ mic track not live");
+      return;
+    }
 
     peersRef.current.forEach((pc) => {
+      if (pc.connectionState === "closed") return;
+
       const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
+
       if (sender) {
-         console.log(" replacing silent track with real mic");
-        sender.replaceTrack(audioTrack).catch(console.error);
-       audioTrack.enabled = true;
+        console.log("🔁 replacing track with LIVE mic");
+        sender.replaceTrack(track).catch(console.error);
+      } else {
+        console.log("➕ adding new track");
+        pc.addTrack(track, stream);
       }
     });
   }, [micOn, micStreamRef]);
 
-  // WebSocket setup — connects to /signal path now
+  // 🌐 WebSocket
   useEffect(() => {
     if (!currentUserId) return;
 
     const url = new URL(WS_URL);
     url.pathname = "/signal";
-    // carry existing query params (token, projectId) if needed
+
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
 
@@ -147,23 +158,30 @@ pc.ontrack = (e) => {
 
     ws.onmessage = async (e) => {
       let msg: any;
-      try { msg = JSON.parse(e.data); } catch { return; }
+      try {
+        msg = JSON.parse(e.data);
+      } catch {
+        return;
+      }
 
-      // Ignore presence messages
       if (msg.type === "presence") return;
 
       console.log(`[WebRTC] received ${msg.type} from ${msg.from}`);
 
       if (msg.type === "offer") {
-        // Only the peer with the lexicographically SMALLER id answers
-        // This prevents both peers from offering simultaneously
         const pc = createPeer(msg.from, false);
+
         await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
         await addPendingCandidates(pc, msg.from);
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: "answer", target: msg.from, sdp: answer }));
-        console.log(`[WebRTC] sent answer to ${msg.from}`);
+
+        ws.send(JSON.stringify({
+          type: "answer",
+          target: msg.from,
+          sdp: answer,
+        }));
       }
 
       if (msg.type === "answer") {
@@ -176,12 +194,12 @@ pc.ontrack = (e) => {
 
       if (msg.type === "ice-candidate") {
         const pc = peersRef.current.get(msg.from);
+
         if (pc && pc.remoteDescription) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
           } catch {}
         } else {
-          // Buffer candidates that arrive before remote description is set
           if (!pendingCandidates.current.has(msg.from)) {
             pendingCandidates.current.set(msg.from, []);
           }
@@ -199,11 +217,11 @@ pc.ontrack = (e) => {
     };
   }, [currentUserId, createPeer]);
 
-  // Only the user with the LARGER userId initiates — prevents double offers
+  // 👥 Peer management
   useEffect(() => {
     activeUserIds.forEach((uid) => {
       if (uid !== currentUserId && !peersRef.current.has(uid)) {
-        const shouldInitiate = currentUserId > uid; // only one side initiates
+        const shouldInitiate = currentUserId > uid;
         createPeer(uid, shouldInitiate);
       }
     });
@@ -212,7 +230,19 @@ pc.ontrack = (e) => {
       if (!activeUserIds.includes(uid)) {
         pc.close();
         peersRef.current.delete(uid);
+        audioElements.current.delete(uid);
       }
     });
   }, [activeUserIds, currentUserId, createPeer]);
+
+  // 🔊 Speaker control (EXPOSE THIS)
+  const toggleSpeaker = (userId: string, enabled: boolean) => {
+    const audio = audioElements.current.get(userId);
+    if (audio) {
+      audio.muted = !enabled;
+      console.log(`🔊 ${userId}:`, enabled ? "ON" : "OFF");
+    }
+  };
+
+  return { toggleSpeaker };
 }
