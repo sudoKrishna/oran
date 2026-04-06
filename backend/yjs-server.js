@@ -74,6 +74,8 @@ httpServer.listen(PORT, () =>
 
 const wss = new WebSocketServer({ server: httpServer });
 
+const signalingClients = new Map();
+
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url, "http://localhost");
   const projectId = url.searchParams.get("projectId");
@@ -83,11 +85,12 @@ wss.on("connection", (ws, req) => {
     return;
   }
 
-
   const user = getUserFromRequest(req);
-  const userId = user?.id || `anon_${Math.random().toString(36).slice(2, 8)}`;
+  const userId =
+    user?.id || `anon_${Math.random().toString(36).slice(2, 8)}`;
   const name = user?.name || null;
   const email = user?.email || null;
+
 
   if (!rooms.has(projectId)) rooms.set(projectId, new Set());
   const entry = { ws, userId, name, email };
@@ -97,17 +100,57 @@ wss.on("connection", (ws, req) => {
   broadcastPresence(projectId);
 
  
+  signalingClients.set(userId, ws);
+  ws.userId = userId;
+
+  
   setupWSConnection(ws, req);
 
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    
+    if (msg.type === "register") {
+      ws.userId = msg.userId;
+      signalingClients.set(msg.userId, ws);
+      return;
+    }
+
+    
+    if (["offer", "answer", "ice-candidate"].includes(msg.type)) {
+      const target = signalingClients.get(msg.target);
+      if (target && target.readyState === target.OPEN) {
+        target.send(
+          JSON.stringify({
+            ...msg,
+            from: ws.userId,
+          })
+        );
+      }
+    }
+  });
+
   ws.on("close", () => {
+  
     const room = rooms.get(projectId);
     if (room) {
       room.delete(entry);
       if (room.size === 0) rooms.delete(projectId);
       else broadcastPresence(projectId);
     }
+
+    
+    if (ws.userId) {
+      signalingClients.delete(ws.userId);
+    }
+
     console.log(`[presence] ${email || userId} left project ${projectId}`);
   });
 });
-
 console.log("Y.js WebSocket server running on ws://localhost:1234");

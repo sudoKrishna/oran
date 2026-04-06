@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback , useMemo } from "react";
 import { gsap } from "gsap";
+import { useWebRTC } from "@/app/hooks/useWebRTC";
 
 
 type PresenceUser = {
@@ -183,6 +184,16 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [micOn, setMicOn] = useState(false);
   const [myVolume, setMyVolume] = useState(0);
+
+  const peerIds = useMemo(
+    () => activeUsers.map((u) => u.userId),
+    [activeUsers]
+  );
+
+
+  if (!currentUserId) return null;
+
+  useWebRTC(currentUserId, peerIds);
   const hubRef = useRef<HTMLButtonElement>(null);
   const orbsContainerRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<SVGSVGElement>(null);
@@ -196,7 +207,10 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
   const RADIUS = 110;
   const HUB_SIZE = 52;
   const MAX_VISIBLE = 8;
-  const SCROLL_THRESHOLD = 60; // px of wheel delta to advance one slot
+  const SCROLL_THRESHOLD = 60;
+
+
+
 
   // Open/close animation 
   const openHub = useCallback(() => {
@@ -320,7 +334,7 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
       }
     };
 
-  
+
     const el = orbsContainerRef.current ?? document;
     el.addEventListener("wheel", handleWheel as EventListener, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel as EventListener);
@@ -432,7 +446,7 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
             </div>
           ))}
 
-        
+
           {canScroll && (
             <ScrollIndicator canScrollUp={canScrollUp} canScrollDown={canScrollDown} />
           )}
