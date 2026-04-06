@@ -11,24 +11,18 @@ export function useWebRTC(
   const wsRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
-
-  //  store audio elements for speaker control
   const audioElements = useRef<Map<string, HTMLAudioElement>>(new Map());
 
   const addPendingCandidates = async (pc: RTCPeerConnection, fromId: string) => {
     const candidates = pendingCandidates.current.get(fromId) || [];
     for (const c of candidates) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(c));
-      } catch {}
+      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
     }
     pendingCandidates.current.delete(fromId);
   };
 
   const createPeer = useCallback((targetId: string, isInitiator: boolean) => {
     if (peersRef.current.has(targetId)) return peersRef.current.get(targetId)!;
-
-    console.log(`[WebRTC] creating peer ${targetId}, initiator=${isInitiator}`);
 
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -37,58 +31,34 @@ export function useWebRTC(
       ],
     });
 
-    //  ONLY add real mic track (NO fake/silent track)
     const stream = micStreamRef.current;
     if (stream) {
-      stream.getAudioTracks().forEach((track) => {
-        if (track.readyState === "live") {
-          console.log("🎤 adding LIVE track", track);
-          pc.addTrack(track, stream);
-        } else {
-          console.warn("⚠️ skipping dead track", track);
-        }
-      });
+      const track = stream.getAudioTracks()[0];
+      if (track && track.readyState === "live") pc.addTrack(track, stream);
     }
 
-    // 🔊 RECEIVE AUDIO
     pc.ontrack = (e) => {
-      console.log("🔥 TRACK RECEIVED from", targetId);
-
       let audio = audioElements.current.get(targetId);
-
       if (!audio) {
         audio = document.createElement("audio");
-        audio.id = `audio-${targetId}`;
         audio.autoplay = true;
-        audio.controls = true; // debug
         audio.setAttribute("playsinline", "true");
-
         document.body.appendChild(audio);
         audioElements.current.set(targetId, audio);
       }
-
       audio.srcObject = e.streams[0];
-
-      audio.play().catch((err) => {
-        console.error("❌ audio play failed", err);
-      });
+      audio.play().catch(() => {});
     };
 
     pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        wsRef.current?.send(
-          JSON.stringify({
-            type: "ice-candidate",
-            target: targetId,
-            candidate: e.candidate.toJSON(),
-          })
-        );
-      }
+      if (e.candidate) wsRef.current?.send(JSON.stringify({
+        type: "ice-candidate",
+        target: targetId,
+        candidate: e.candidate.toJSON(),
+      }));
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] ${targetId} state: ${pc.connectionState}`);
-
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         pc.close();
         peersRef.current.delete(targetId);
@@ -100,88 +70,52 @@ export function useWebRTC(
       pc.createOffer()
         .then((offer) => pc.setLocalDescription(offer))
         .then(() => {
-          wsRef.current?.send(
-            JSON.stringify({
-              type: "offer",
-              target: targetId,
-              sdp: pc.localDescription,
-            })
-          );
-          console.log(`[WebRTC] sent offer to ${targetId}`);
+          wsRef.current?.send(JSON.stringify({
+            type: "offer",
+            target: targetId,
+            sdp: pc.localDescription,
+          }));
         })
-        .catch(console.error);
+        .catch(() => {});
     }
 
     peersRef.current.set(targetId, pc);
     return pc;
   }, [micStreamRef]);
 
-  // ✅ Sync mic to peers
   useEffect(() => {
     const stream = micStreamRef.current;
     if (!stream) return;
-
     const track = stream.getAudioTracks()[0];
-    if (!track || track.readyState !== "live") {
-      console.warn("⚠️ mic track not live");
-      return;
-    }
+    if (!track || track.readyState !== "live") return;
 
     peersRef.current.forEach((pc) => {
       if (pc.connectionState === "closed") return;
-
       const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
-
-      if (sender) {
-        console.log("🔁 replacing track with LIVE mic");
-        sender.replaceTrack(track).catch(console.error);
-      } else {
-        console.log("➕ adding new track");
-        pc.addTrack(track, stream);
-      }
+      if (sender) sender.replaceTrack(track).catch(() => {});
+      else pc.addTrack(track, stream);
     });
   }, [micOn, micStreamRef]);
 
-  // 🌐 WebSocket
   useEffect(() => {
     if (!currentUserId) return;
-
     const url = new URL(WS_URL);
     url.pathname = "/signal";
-
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
 
-    ws.onopen = () => {
-      console.log("[WebRTC] signal WS connected");
-    };
-
     ws.onmessage = async (e) => {
       let msg: any;
-      try {
-        msg = JSON.parse(e.data);
-      } catch {
-        return;
-      }
-
+      try { msg = JSON.parse(e.data); } catch { return; }
       if (msg.type === "presence") return;
-
-      console.log(`[WebRTC] received ${msg.type} from ${msg.from}`);
 
       if (msg.type === "offer") {
         const pc = createPeer(msg.from, false);
-
         await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
         await addPendingCandidates(pc, msg.from);
-
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-
-        ws.send(JSON.stringify({
-          type: "answer",
-          target: msg.from,
-          sdp: answer,
-        }));
+        ws.send(JSON.stringify({ type: "answer", target: msg.from, sdp: answer }));
       }
 
       if (msg.type === "answer") {
@@ -194,21 +128,16 @@ export function useWebRTC(
 
       if (msg.type === "ice-candidate") {
         const pc = peersRef.current.get(msg.from);
-
         if (pc && pc.remoteDescription) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-          } catch {}
+          try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
         } else {
-          if (!pendingCandidates.current.has(msg.from)) {
-            pendingCandidates.current.set(msg.from, []);
-          }
+          if (!pendingCandidates.current.has(msg.from)) pendingCandidates.current.set(msg.from, []);
           pendingCandidates.current.get(msg.from)!.push(msg.candidate);
         }
       }
     };
 
-    ws.onerror = (e) => console.error("[WebRTC] WS error", e);
+    ws.onerror = (e) => console.error(e);
 
     return () => {
       ws.close();
@@ -217,15 +146,12 @@ export function useWebRTC(
     };
   }, [currentUserId, createPeer]);
 
-  // 👥 Peer management
   useEffect(() => {
     activeUserIds.forEach((uid) => {
       if (uid !== currentUserId && !peersRef.current.has(uid)) {
-        const shouldInitiate = currentUserId > uid;
-        createPeer(uid, shouldInitiate);
+        createPeer(uid, currentUserId > uid);
       }
     });
-
     peersRef.current.forEach((pc, uid) => {
       if (!activeUserIds.includes(uid)) {
         pc.close();
@@ -235,13 +161,9 @@ export function useWebRTC(
     });
   }, [activeUserIds, currentUserId, createPeer]);
 
-  // 🔊 Speaker control (EXPOSE THIS)
   const toggleSpeaker = (userId: string, enabled: boolean) => {
     const audio = audioElements.current.get(userId);
-    if (audio) {
-      audio.muted = !enabled;
-      console.log(`🔊 ${userId}:`, enabled ? "ON" : "OFF");
-    }
+    if (audio) audio.muted = !enabled;
   };
 
   return { toggleSpeaker };
