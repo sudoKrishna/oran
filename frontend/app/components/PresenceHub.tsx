@@ -181,9 +181,13 @@ function ScrollIndicator({ canScrollUp, canScrollDown }: { canScrollUp: boolean;
 
 // PresenceHub 
 export default function PresenceHub({ activeUsers, currentUserId }: Props) {
+
+  const [mutedSpeakers, setMutedSpeakers] = useState<Set<string>>(new Set());
   const [isOpen, setIsOpen] = useState(false);
   const [micOn, setMicOn] = useState(false);
   const [myVolume, setMyVolume] = useState(0);
+
+  
 
   const peerIds = useMemo(
     () => activeUsers.map((u) => u.userId),
@@ -204,12 +208,12 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
   const tlRef = useRef<gsap.core.Timeline | null>(null);
   const scrollAccumRef = useRef<number>(0);
 
-  const { toggleSpeaker } = useWebRTC(
-    safeUserId as string,
-    peerIds,
-    micStreamRef,
-    micOn
-  );
+const { toggleSpeaker } = useWebRTC(
+  safeUserId as string,
+  peerIds,
+  micStreamRef,
+  micOn
+);
 
 
   const RADIUS = 110;
@@ -494,35 +498,43 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
 
                 {/* 🔊 Speaker Toggle */}
                 {user.userId !== currentUserId && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const enabled = !(user as any)._speakerOn;
-                      (user as any)._speakerOn = enabled;
-                      toggleSpeaker(user.userId, enabled);
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: -6,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 18,
-                      height: 18,
-                      borderRadius: "50%",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      background: "rgba(0,0,0,0.6)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                      fontSize: 10,
-                      zIndex: 5,
-                    }}
-                    title="Toggle speaker"
-                  >
-                    {(user as any)._speakerOn === false ? "🔇" : "🔊"}
-                  </button>
-                )}
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      const isCurrentlyMuted = mutedSpeakers.has(user.userId);
+      const nowEnabled = isCurrentlyMuted; // toggling: if muted → enable
+      
+      toggleSpeaker(user.userId, nowEnabled);
+      
+      setMutedSpeakers((prev) => {
+        const next = new Set(prev);
+        if (nowEnabled) next.delete(user.userId);
+        else next.add(user.userId);
+        return next;
+      });
+    }}
+    style={{
+      position: "absolute",
+      top: -6,
+      left: "50%",
+      transform: "translateX(-50%)",
+      width: 18,
+      height: 18,
+      borderRadius: "50%",
+      border: "1px solid rgba(255,255,255,0.2)",
+      background: "rgba(0,0,0,0.6)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      fontSize: 10,
+      zIndex: 5,
+    }}
+    title="Toggle speaker"
+  >
+    {mutedSpeakers.has(user.userId) ? "🔇" : "🔊"}
+  </button>
+)}
               </div>
             </div>
           ))}

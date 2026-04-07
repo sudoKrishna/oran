@@ -13,6 +13,9 @@ export function useWebRTC(
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const audioElements = useRef<Map<string, HTMLAudioElement>>(new Map());
 
+  const signalPeers = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const mySignalId = useRef<string | null>(null);
+
   const addPendingCandidates = async (pc: RTCPeerConnection, fromId: string) => {
     const candidates = pendingCandidates.current.get(fromId) || [];
     for (const c of candidates) {
@@ -21,8 +24,10 @@ export function useWebRTC(
     pendingCandidates.current.delete(fromId);
   };
 
-  const createPeer = useCallback((targetId: string, isInitiator: boolean) => {
-    if (peersRef.current.has(targetId)) return peersRef.current.get(targetId)!;
+  const createPeer = useCallback((targetSignalId: string, isInitiator: boolean) => {
+    if (signalPeers.current.has(targetSignalId)) {
+      return signalPeers.current.get(targetSignalId)!;
+    }
 
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -39,16 +44,15 @@ export function useWebRTC(
     }
 
     pc.ontrack = (e) => {
-      let audio = audioElements.current.get(targetId);
+      let audio = audioElements.current.get(targetSignalId);
       if (!audio) {
         audio = document.createElement("audio");
-        audio.id = `audio-${targetId}`;
+        audio.id = `audio-${targetSignalId}`;
         audio.autoplay = true;
-        audio.controls = false;
         audio.muted = false;
         audio.setAttribute("playsinline", "true");
         document.body.appendChild(audio);
-        audioElements.current.set(targetId, audio);
+        audioElements.current.set(targetSignalId, audio);
       }
       audio.srcObject = e.streams[0];
       audio.play().catch(() => {});
@@ -58,7 +62,7 @@ export function useWebRTC(
       if (e.candidate) {
         wsRef.current?.send(JSON.stringify({
           type: "ice-candidate",
-          target: targetId,
+          target: targetSignalId,   
           candidate: e.candidate.toJSON(),
         }));
       }
@@ -67,8 +71,9 @@ export function useWebRTC(
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         pc.close();
-        peersRef.current.delete(targetId);
-        audioElements.current.delete(targetId);
+        signalPeers.current.delete(targetSignalId);
+        audioElements.current.get(targetSignalId)?.remove();
+        audioElements.current.delete(targetSignalId);
       }
     };
 
@@ -78,24 +83,25 @@ export function useWebRTC(
         .then(() => {
           wsRef.current?.send(JSON.stringify({
             type: "offer",
-            target: targetId,
+            target: targetSignalId,  
             sdp: pc.localDescription,
           }));
         })
         .catch(console.error);
     }
 
-    peersRef.current.set(targetId, pc);
+    signalPeers.current.set(targetSignalId, pc);
     return pc;
   }, [micStreamRef]);
 
+ 
   useEffect(() => {
     const stream = micStreamRef.current;
     if (!stream) return;
     const track = stream.getAudioTracks()[0];
     if (!track || track.readyState !== "live") return;
 
-    peersRef.current.forEach((pc) => {
+    signalPeers.current.forEach((pc) => {
       if (pc.connectionState === "closed") return;
       const sender = pc.getSenders().find((s) => s.track?.kind === "audio");
       if (sender) sender.replaceTrack(track).catch(() => {});
@@ -110,10 +116,26 @@ export function useWebRTC(
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
 
-    ws.onopen = () => {};
     ws.onmessage = async (e) => {
       let msg: any;
       try { msg = JSON.parse(e.data); } catch { return; }
+
+      if (msg.type === "self-id") {
+        mySignalId.current = msg.userId;
+        return;
+      }
+
+  
+      if (msg.type === "peer-joined") {
+        const theirId: string = msg.userId;
+        if (theirId === mySignalId.current) return; 
+        if (!signalPeers.current.has(theirId)) {
+          const shouldInitiate = (mySignalId.current ?? "") > theirId;
+          createPeer(theirId, shouldInitiate);
+        }
+        return;
+      }
+
       if (msg.type === "presence") return;
 
       if (msg.type === "offer") {
@@ -126,7 +148,7 @@ export function useWebRTC(
       }
 
       if (msg.type === "answer") {
-        const pc = peersRef.current.get(msg.from);
+        const pc = signalPeers.current.get(msg.from);
         if (pc) {
           await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
           await addPendingCandidates(pc, msg.from);
@@ -134,37 +156,30 @@ export function useWebRTC(
       }
 
       if (msg.type === "ice-candidate") {
-        const pc = peersRef.current.get(msg.from);
+        const pc = signalPeers.current.get(msg.from);
         if (pc && pc.remoteDescription) {
           try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
         } else {
-          if (!pendingCandidates.current.has(msg.from)) pendingCandidates.current.set(msg.from, []);
+          if (!pendingCandidates.current.has(msg.from)) {
+            pendingCandidates.current.set(msg.from, []);
+          }
           pendingCandidates.current.get(msg.from)!.push(msg.candidate);
         }
       }
     };
 
     ws.onerror = (e) => console.error(e);
-    return () => { ws.close(); peersRef.current.forEach((pc) => pc.close()); peersRef.current.clear(); };
+    return () => {
+      ws.close();
+      signalPeers.current.forEach((pc) => pc.close());
+      signalPeers.current.clear();
+    };
   }, [currentUserId, createPeer]);
 
-  useEffect(() => {
-    activeUserIds.forEach((uid) => {
-      if (uid !== currentUserId && !peersRef.current.has(uid)) {
-        const shouldInitiate = currentUserId > uid;
-        createPeer(uid, shouldInitiate);
-      }
-    });
-    peersRef.current.forEach((pc, uid) => {
-      if (!activeUserIds.includes(uid)) {
-        pc.close();
-        peersRef.current.delete(uid);
-        audioElements.current.delete(uid);
-      }
-    });
-  }, [activeUserIds, currentUserId, createPeer]);
+
 
   const toggleSpeaker = (userId: string, enabled: boolean) => {
+    
     const audio = audioElements.current.get(userId);
     if (audio) audio.muted = !enabled;
   };

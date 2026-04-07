@@ -69,6 +69,16 @@ signalWss.on("connection", (ws, req) => {
   ws.userId = userId;
 
   console.log(`[presence] ${email || userId} joined ${projectId}`);
+ 
+  ws.send(JSON.stringify({ type: "self-id", userId }));
+
+   for (const { ws: existingWs, userId: existingId } of rooms.get(projectId)) {
+    if (existingWs !== ws && existingWs.readyState === existingWs.OPEN) {
+      existingWs.send(JSON.stringify({ type: "peer-joined", userId }));
+      ws.send(JSON.stringify({ type: "peer-joined", userId: existingId }));
+    }
+  }
+
   broadcastPresence(projectId);
 
   ws.on("message", (raw) => {
