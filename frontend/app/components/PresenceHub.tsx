@@ -208,7 +208,7 @@ export default function PresenceHub({ activeUsers, currentUserId }: Props) {
   const tlRef = useRef<gsap.core.Timeline | null>(null);
   const scrollAccumRef = useRef<number>(0);
 
-const { toggleSpeaker } = useWebRTC(
+const { toggleSpeaker, unlockAudio, audioUnlocked } = useWebRTC(
   safeUserId as string,
   peerIds,
   micStreamRef,
@@ -560,6 +560,32 @@ const { toggleSpeaker } = useWebRTC(
         </div>
       )}
 
+      {!audioUnlocked && (
+  <button
+    onClick={unlockAudio}
+    style={{
+      position: "absolute",
+      bottom: HUB_SIZE + 52,
+      left: "50%",
+      transform: "translateX(-50%)",
+      whiteSpace: "nowrap",
+      padding: "5px 10px",
+      borderRadius: 20,
+      border: "1px solid rgba(255,165,0,0.5)",
+      background: "rgba(255,140,0,0.15)",
+      backdropFilter: "blur(12px)",
+      color: "rgba(255,200,100,0.9)",
+      fontSize: 10,
+      fontWeight: 600,
+      cursor: "pointer",
+      letterSpacing: "0.04em",
+      zIndex: 3,
+    }}
+    title="Click to enable speaker audio"
+  >
+    🔊 Enable audio
+  </button>
+)}
       {/* Mic button  */}
       <button
         onClick={toggleMic}
